@@ -18,6 +18,7 @@ const AUTH_PATHS = [
   '/application-rejected',
   '/account-suspended',
   '/timetable-setup',
+  '/timetable',
 ];
 
 export const DevStateSwitcher: React.FC = () => {

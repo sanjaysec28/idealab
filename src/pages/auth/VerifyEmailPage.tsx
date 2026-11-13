@@ -4,6 +4,7 @@ import { MailCheck, RefreshCw, Send, AlertCircle, CheckCircle2 } from 'lucide-re
 import { Logo } from '../../components/navigation/Logo';
 import { useAuth } from '../../context/AuthContext';
 import { useLoading } from '../../context/LoadingContext';
+import { IS_TIMETABLE_TESTING_MODE } from '../../config/featureFlags';
 import { AuthLoadingScreen } from '../../components/auth/AuthGuard';
 
 export const VerifyEmailPage: React.FC = () => {
@@ -54,7 +55,12 @@ export const VerifyEmailPage: React.FC = () => {
     try {
       const verified = await withBackgroundRefresh(refreshVerificationStatus());
       if (verified) {
-        setNotice({ type: 'success', text: 'Email verified! Redirecting to membership request...' });
+        setNotice({
+          type: 'success',
+          text: IS_TIMETABLE_TESTING_MODE
+            ? 'Email verified! Redirecting to Timetable Builder...'
+            : 'Email verified! Redirecting to membership request...',
+        });
       } else {
         setNotice({
           type: 'info',

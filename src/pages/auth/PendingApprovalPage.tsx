@@ -4,6 +4,7 @@ import { Hourglass, CheckCircle2, RefreshCw } from 'lucide-react';
 import { Logo } from '../../components/navigation/Logo';
 import { useAuth } from '../../context/AuthContext';
 import { useLoading } from '../../context/LoadingContext';
+import { IS_TIMETABLE_TESTING_MODE } from '../../config/featureFlags';
 import { AuthLoadingScreen } from '../../components/auth/AuthGuard';
 
 export const PendingApprovalPage: React.FC = () => {
@@ -32,6 +33,10 @@ export const PendingApprovalPage: React.FC = () => {
     }
     if (authState === 'unverified_email') {
       navigate('/verify-email', { replace: true });
+      return;
+    }
+    if (IS_TIMETABLE_TESTING_MODE) {
+      navigate('/timetable', { replace: true });
       return;
     }
     if (authState === 'needs_membership_request') {

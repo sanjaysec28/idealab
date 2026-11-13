@@ -2,7 +2,7 @@ import React from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { StudentLayout } from '../layouts/StudentLayout';
 import { AuthGuard } from '../components/auth/AuthGuard';
-import { ProtectedRoute } from '../components/auth/MembershipGuard';
+import { ProtectedRoute, VerifiedEmailGuard } from '../components/auth/MembershipGuard';
 import { SplashScreen } from '../pages/auth/SplashScreen';
 import { WelcomePage } from '../pages/auth/WelcomePage';
 import { OnboardingPage } from '../pages/auth/OnboardingPage';
@@ -12,6 +12,7 @@ import { VerifyEmailPage } from '../pages/auth/VerifyEmailPage';
 import { MembershipRequestPage } from '../pages/auth/MembershipRequestPage';
 import { PendingApprovalPage } from '../pages/auth/PendingApprovalPage';
 import { MembershipRejectedPage } from '../pages/auth/MembershipRejectedPage';
+import { TimetablePage } from '../pages/timetable/TimetablePage';
 import { DiscoverPage } from '../pages/discover/DiscoverPage';
 import { ExplorePage } from '../pages/explore/ExplorePage';
 import { ProjectsPage } from '../pages/projects/ProjectsPage';
@@ -87,6 +88,16 @@ export const router = createBrowserRouter([
   {
     path: '/application-rejected',
     element: <Navigate to="/membership-rejected" replace />,
+  },
+  {
+    path: '/timetable',
+    element: (
+      <AuthGuard>
+        <VerifiedEmailGuard>
+          <TimetablePage />
+        </VerifiedEmailGuard>
+      </AuthGuard>
+    ),
   },
   {
     element: <AuthGuard />,

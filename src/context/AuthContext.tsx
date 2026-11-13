@@ -9,6 +9,7 @@ import React, {
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../firebase/config';
 import {
+  getSignupDraft,
   registerStudentAccount,
   reloadStudentUser,
   resendStudentVerificationEmail,
@@ -17,6 +18,7 @@ import {
   signInStudentWithGoogle,
   signOutStudentAccount,
 } from '../firebase/authService';
+import { IS_TIMETABLE_TESTING_MODE } from '../config/featureFlags';
 import {
   getStudentProfile,
   submitStudentMembershipRequest,
@@ -188,16 +190,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'unverified_email':
           return '/verify-email';
         case 'needs_membership_request':
-          return '/membership-request';
+          return IS_TIMETABLE_TESTING_MODE ? '/timetable' : '/membership-request';
         case 'pending':
-          return '/pending-approval';
+          return IS_TIMETABLE_TESTING_MODE ? '/timetable' : '/pending-approval';
         case 'rejected':
-          return '/membership-rejected';
+          return IS_TIMETABLE_TESTING_MODE ? '/timetable' : '/membership-rejected';
         case 'approved': {
           if (intendedPath && !PUBLIC_OR_STATUS_PATHS.has(intendedPath.split('?')[0])) {
             return intendedPath;
           }
-          return '/discover';
+          return IS_TIMETABLE_TESTING_MODE ? '/timetable' : '/discover';
         }
         case 'loading':
         default:
@@ -363,11 +365,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [isAuthReady, user, emailVerified, isProfileLoaded, studentProfile]
   );
 
-  const studentData: DerivedStudentData = useMemo(
-    () => ({
-      name: studentProfile?.fullName || user?.displayName || 'IDEA Lab Student',
+  const studentData: DerivedStudentData = useMemo(() => {
+    const draft = user ? getSignupDraft(user.uid) : null;
+    const emailPrefix = user?.email ? user.email.split('@')[0] : '';
+    return {
+      name:
+        studentProfile?.fullName ||
+        user?.displayName ||
+        draft?.fullName ||
+        emailPrefix ||
+        'IDEA Lab Student',
       email: studentProfile?.email || user?.email || '',
-      rollNumber: studentProfile?.registrationNumber || '',
+      rollNumber: studentProfile?.registrationNumber || draft?.registrationNumber || '',
       department: studentProfile?.department || 'AI & Data Science',
       year: studentProfile?.academicYear || '3rd Year',
       submittedDate: studentProfile?.createdAt?.toDate
@@ -377,9 +386,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             year: 'numeric',
           })
         : undefined,
-    }),
-    [studentProfile, user]
-  );
+    };
+  }, [studentProfile, user]);
 
   return (
     <AuthContext.Provider

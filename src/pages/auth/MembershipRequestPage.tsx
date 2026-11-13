@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Logo } from '../../components/navigation/Logo';
 import { useAuth } from '../../context/AuthContext';
 import { getSignupDraft } from '../../firebase/authService';
+import { IS_TIMETABLE_TESTING_MODE } from '../../config/featureFlags';
 import { AuthLoadingScreen } from '../../components/auth/AuthGuard';
 
 const DEPARTMENTS = [
@@ -54,6 +55,10 @@ export const MembershipRequestPage: React.FC = () => {
     }
     if (authState === 'unverified_email') {
       navigate('/verify-email', { replace: true });
+      return;
+    }
+    if (IS_TIMETABLE_TESTING_MODE) {
+      navigate('/timetable', { replace: true });
       return;
     }
     if (authState !== 'needs_membership_request') {
