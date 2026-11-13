@@ -13,6 +13,7 @@ import { VerifyEmailPage } from '../pages/auth/VerifyEmailPage';
 import { HomePage } from '../pages/home/HomePage';
 import { TimetablePage } from '../pages/timetable/TimetablePage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
+import { NotFoundPage } from '../pages/NotFoundPage';
 
 export const router = createBrowserRouter([
   {
@@ -38,6 +39,10 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LoginPage />,
+  },
+  {
+    path: '/signin',
+    element: <Navigate to="/login" replace />,
   },
   {
     path: '/join',
@@ -108,6 +113,6 @@ export const router = createBrowserRouter([
   },
   {
     path: '*',
-    element: <Navigate to="/" replace />,
+    element: <NotFoundPage />,
   },
 ]);
