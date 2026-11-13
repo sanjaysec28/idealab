@@ -5,8 +5,6 @@ import { Logo } from '../../components/navigation/Logo';
 import { useAuth } from '../../context/AuthContext';
 import { isValidEmailAddress } from '../../firebase/authService';
 
-const REG_NUMBER_REGEX = /^[A-Za-z0-9-]{4,32}$/;
-
 function evaluatePasswordStrength(password: string): {
   score: number;
   label: string;
@@ -44,7 +42,6 @@ export const SignupPage: React.FC = () => {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [registrationNumber, setRegistrationNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -62,9 +59,6 @@ export const SignupPage: React.FC = () => {
     if (!isValidEmailAddress(email)) {
       errors.email = 'Enter a valid email address (e.g., Gmail, Outlook, Yahoo, or college email).';
     }
-    if (!REG_NUMBER_REGEX.test(registrationNumber.trim())) {
-      errors.registrationNumber = 'Enter a valid registration number (4–32 letters/numbers).';
-    }
     if (password.length < 8 || strength.score < 3) {
       errors.password = 'Use 8+ characters with uppercase, lowercase, and a number or symbol.';
     }
@@ -72,7 +66,7 @@ export const SignupPage: React.FC = () => {
       errors.confirmPassword = 'Passwords do not match.';
     }
     return errors;
-  }, [fullName, email, registrationNumber, password, confirmPassword, strength.score]);
+  }, [fullName, email, password, confirmPassword, strength.score]);
 
   const markTouched = (field: string) =>
     setTouched((prev) => ({ ...prev, [field]: true }));
@@ -83,7 +77,6 @@ export const SignupPage: React.FC = () => {
     setTouched({
       fullName: true,
       email: true,
-      registrationNumber: true,
       password: true,
       confirmPassword: true,
     });
@@ -96,7 +89,6 @@ export const SignupPage: React.FC = () => {
       await signup({
         fullName: fullName.trim(),
         email: email.trim().toLowerCase(),
-        registrationNumber: registrationNumber.trim().toUpperCase(),
         password,
       });
       navigate('/verify-email', { replace: true });
@@ -173,24 +165,6 @@ export const SignupPage: React.FC = () => {
             />
             {touched.email && fieldErrors.email && (
               <p className="mt-1 text-[11px] text-[#E63946]">{fieldErrors.email}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-[#202124] mb-1">
-              Registration Number
-            </label>
-            <input
-              type="text"
-              required
-              value={registrationNumber}
-              onChange={(e) => setRegistrationNumber(e.target.value)}
-              onBlur={() => markTouched('registrationNumber')}
-              placeholder="212224040001"
-              className="w-full h-10 bg-white border border-[#EEEEEE] rounded-xl px-3.5 text-xs text-[#202124] placeholder-[#AAAAAA] focus:outline-none focus:border-[#E63946] transition-colors"
-            />
-            {touched.registrationNumber && fieldErrors.registrationNumber && (
-              <p className="mt-1 text-[11px] text-[#E63946]">{fieldErrors.registrationNumber}</p>
             )}
           </div>
 

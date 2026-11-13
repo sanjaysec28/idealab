@@ -29,7 +29,7 @@ export interface StudentProfileDoc {
 export interface SignupInput {
   fullName: string;
   email: string;
-  registrationNumber: string;
+  registrationNumber?: string;
   password: string;
 }
 
@@ -48,5 +48,5 @@ export interface MembershipRequestInput {
 
 export interface SignupDraft {
   fullName: string;
-  registrationNumber: string;
+  registrationNumber?: string;
 }

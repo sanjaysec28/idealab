@@ -2,12 +2,10 @@ import {
   browserLocalPersistence,
   browserSessionPersistence,
   createUserWithEmailAndPassword,
-  GoogleAuthProvider,
   sendEmailVerification,
   sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signOut,
   updateProfile,
   User,
@@ -66,8 +64,6 @@ export function mapFirebaseAuthError(err: unknown): string {
       return 'Too many attempts. Please wait a moment before trying again.';
     case 'auth/user-disabled':
       return 'This account has been disabled. Contact your IDEA LAB coordinator.';
-    case 'auth/popup-closed-by-user':
-      return 'Google sign-in was cancelled before completion.';
     case 'auth/operation-not-allowed':
       return 'Email/Password sign-in is not yet enabled in Firebase Console Authentication settings.';
     case 'auth/network-request-failed':
@@ -111,13 +107,16 @@ export function assertValidEmailAddress(email: string | null | undefined): strin
 export async function registerStudentAccount(input: SignupInput): Promise<User> {
   const email = assertValidEmailAddress(input.email);
   const fullName = input.fullName.trim();
-  const registrationNumber = input.registrationNumber.trim().toUpperCase();
+  const registrationNumber = (input.registrationNumber ?? '').trim().toUpperCase();
 
   try {
     await setPersistence(auth, browserLocalPersistence);
     const credential = await createUserWithEmailAndPassword(auth, email, input.password);
     await updateProfile(credential.user, { displayName: fullName });
-    saveSignupDraft(credential.user.uid, { fullName, registrationNumber });
+    saveSignupDraft(credential.user.uid, {
+      fullName,
+      ...(registrationNumber ? { registrationNumber } : {}),
+    });
     await sendEmailVerification(credential.user);
     return credential.user;
   } catch (error) {
@@ -133,20 +132,6 @@ export async function signInStudentAccount(input: SignInInput): Promise<User> {
       input.rememberMe ? browserLocalPersistence : browserSessionPersistence
     );
     const credential = await signInWithEmailAndPassword(auth, email, input.password);
-    return credential.user;
-  } catch (error) {
-    throw new Error(mapFirebaseAuthError(error));
-  }
-}
-
-export async function signInStudentWithGoogle(): Promise<User> {
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({
-      prompt: 'select_account',
-    });
-    const credential = await signInWithPopup(auth, provider);
     return credential.user;
   } catch (error) {
     throw new Error(mapFirebaseAuthError(error));

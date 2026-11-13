@@ -15,7 +15,6 @@ import {
   resendStudentVerificationEmail,
   sendStudentPasswordReset,
   signInStudentAccount,
-  signInStudentWithGoogle,
   signOutStudentAccount,
 } from '../firebase/authService';
 import { IS_TIMETABLE_TESTING_MODE } from '../config/featureFlags';
@@ -51,7 +50,6 @@ interface AuthContextType {
   clearAuthError: () => void;
   signup: (input: SignupInput) => Promise<User>;
   signIn: (input: SignInInput) => Promise<AuthStateStatus>;
-  signInWithGoogle: () => Promise<AuthStateStatus>;
   resendVerificationEmail: () => Promise<void>;
   refreshVerificationStatus: () => Promise<boolean>;
   sendPasswordReset: (email: string) => Promise<void>;
@@ -273,21 +271,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [resolveStateForUser]
   );
 
-  const signInWithGoogle = useCallback(async (): Promise<AuthStateStatus> => {
-    setAuthError(null);
-    setIsBusy(true);
-    try {
-      const googleUser = await signInStudentWithGoogle();
-      return await resolveStateForUser(googleUser);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Google sign-in failed.';
-      setAuthError(msg);
-      throw err;
-    } finally {
-      setIsBusy(false);
-    }
-  }, [resolveStateForUser]);
-
   const resendVerificationEmail = useCallback(async (): Promise<void> => {
     const targetUser = auth.currentUser || user;
     if (!targetUser) {
@@ -401,7 +384,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearAuthError,
         signup,
         signIn,
-        signInWithGoogle,
         resendVerificationEmail,
         refreshVerificationStatus,
         sendPasswordReset,

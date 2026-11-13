@@ -36,7 +36,7 @@ export const AddClassPanel: React.FC<AddClassPanelProps> = ({
   const topBannerError = validationErrors?.conflict || validationErrors?.duplicate;
 
   return (
-    <aside className="bg-[#202020] rounded-[24px] p-5 sm:p-6 text-white shadow-lg flex flex-col">
+    <aside className="bg-[#202020] rounded-[24px] p-5 sm:p-6 text-white shadow-lg flex flex-col lg:sticky lg:top-[88px] lg:max-h-[calc(100dvh-108px)] lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:thin] lg:[scrollbar-color:rgba(255,255,255,0.22)_transparent]">
       {/* Header */}
       <div className="flex items-start gap-3.5 pb-5 border-b border-white/10">
         <div className="w-10 h-10 rounded-xl bg-[#E63946] text-white flex items-center justify-center shrink-0 shadow-sm shadow-[#E63946]/30">
