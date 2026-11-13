@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, RotateCcw, Sparkles, X } from 'lucide-react';
+import { Calendar, RotateCcw } from 'lucide-react';
 import {
   DaySlotSchedule,
   TIME_SLOTS,
@@ -18,11 +18,9 @@ interface WeeklyTimetableProps {
   formSelectedDays: WeekdayId[];
   editingClassId: string | null;
   summary: TimetableSummaryMetrics;
-  isDemoData: boolean;
   onSelectEmptyCell: (day: WeekdayId, slotId: TimeSlotId) => void;
   onSelectOccupiedCell: (entry: TimetableClassEntry) => void;
   onResetView: () => void;
-  onClearDemoData: () => void;
 }
 
 export const WeeklyTimetable: React.FC<WeeklyTimetableProps> = ({
@@ -31,11 +29,9 @@ export const WeeklyTimetable: React.FC<WeeklyTimetableProps> = ({
   formSelectedDays,
   editingClassId,
   summary,
-  isDemoData,
   onSelectEmptyCell,
   onSelectOccupiedCell,
   onResetView,
-  onClearDemoData,
 }) => {
   return (
     <section className="bg-white rounded-[24px] border border-[#EAE6E1] shadow-xs p-5 sm:p-6 flex flex-col">
@@ -70,26 +66,6 @@ export const WeeklyTimetable: React.FC<WeeklyTimetableProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Separated Demo Data Banner */}
-      {isDemoData && (
-        <div className="mt-4 px-3.5 py-2.5 rounded-2xl bg-[#FFF0F1] border border-[#E63946]/20 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs text-[#202124]">
-            <Sparkles className="w-3.5 h-3.5 text-[#E63946] shrink-0" />
-            <span>
-              <strong className="font-semibold">Sample Preview:</strong> Demo classes are shown so you can explore the grid.
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onClearDemoData}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-[#FAF8F5] border border-[#EAE6E1] text-[11px] font-semibold text-[#E63946] cursor-pointer"
-          >
-            <X className="w-3 h-3" />
-            <span>Clear Demo Data</span>
-          </button>
-        </div>
-      )}
 
       {/* Weekly Grid (horizontally scrollable on narrow screens) */}
       <div className="mt-4 overflow-x-auto pb-1">

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Bell, Sparkles, X } from 'lucide-react';
-import { Logo } from './Logo';
+import { IdeaLabLogo } from '../shared/IdeaLabLogo';
 import { ASSETS } from '../../utils/assets';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -18,8 +18,8 @@ export const TopNav: React.FC<TopNavProps> = ({ onOpenCreateIdea }) => {
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-[#EEEEEE] px-4 lg:px-8 py-3 flex items-center justify-between gap-4">
       {/* Mobile Logo */}
       <div className="flex items-center lg:hidden">
-        <Link to="/discover">
-          <Logo size="sm" />
+        <Link to="/home" aria-label="IDEA LAB Home">
+          <IdeaLabLogo variant="compact" />
         </Link>
       </div>
 

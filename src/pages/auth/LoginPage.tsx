@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { Logo } from '../../components/navigation/Logo';
+import { IdeaLabLogo } from '../../components/shared/IdeaLabLogo';
 import { useAuth } from '../../context/AuthContext';
 import { isValidEmailAddress } from '../../firebase/authService';
 
@@ -80,7 +80,7 @@ export const LoginPage: React.FC = () => {
     <div className="min-h-[100dvh] bg-[#FAF8F5] text-[#202124] flex flex-col justify-between px-5 py-6 sm:py-8">
       <div className="max-w-[420px] w-full mx-auto flex items-center justify-between">
         <Link to="/welcome" aria-label="IDEA LAB Home">
-          <Logo size="sm" />
+          <IdeaLabLogo variant="auth" />
         </Link>
         <Link
           to="/welcome"

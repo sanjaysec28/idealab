@@ -70,11 +70,11 @@ export const SettingsPage: React.FC = () => {
 
           <div className="space-y-3">
             <p className="text-xs text-[#777777]">
-              Your account is securely linked with Saveetha Engineering College student directory (Roll No: SEC2024101).
+              Your account is authenticated with Firebase Email/Password authentication.
             </p>
             <div className="p-3 rounded-2xl bg-[#FAFAFA] border border-[#EEEEEE] flex items-center justify-between">
-              <span className="text-xs font-semibold text-[#202124]">College Domain Verified</span>
-              <span className="text-[10px] font-bold text-[#32B878] bg-[#32B878]/10 px-2.5 py-1 rounded-full">Active</span>
+              <span className="text-xs font-semibold text-[#202124]">Email Verification</span>
+              <span className="text-[10px] font-bold text-[#32B878] bg-[#32B878]/10 px-2.5 py-1 rounded-full">Verified</span>
             </div>
           </div>
         </div>

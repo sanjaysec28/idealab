@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, AlertCircle, Check } from 'lucide-react';
-import { Logo } from '../../components/navigation/Logo';
+import { IdeaLabLogo } from '../../components/shared/IdeaLabLogo';
 import { useAuth } from '../../context/AuthContext';
 import { isValidEmailAddress } from '../../firebase/authService';
 
@@ -101,7 +101,7 @@ export const SignupPage: React.FC = () => {
     <div className="min-h-[100dvh] bg-[#FAF8F5] text-[#202124] flex flex-col justify-between px-5 py-6 sm:py-8">
       <div className="max-w-[440px] w-full mx-auto flex items-center justify-between">
         <Link to="/welcome" aria-label="IDEA LAB Home">
-          <Logo size="sm" />
+          <IdeaLabLogo variant="auth" />
         </Link>
         <Link
           to="/welcome"
@@ -118,7 +118,7 @@ export const SignupPage: React.FC = () => {
             Create your account
           </h1>
           <p className="text-xs text-[#777777]">
-            Register with any valid email address to verify your identity and apply for IDEA LAB.
+            Register with any valid email address to verify your account, build your timetable, and access IDEA LAB.
           </p>
         </div>
 

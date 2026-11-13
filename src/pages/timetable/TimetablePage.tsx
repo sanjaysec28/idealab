@@ -1,19 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { useAuth } from '../../context/AuthContext';
-import { cloneDemoTimetableClasses } from '../../data/mockTimetable';
 import {
-  clearTimetableSubmissionForStudent,
-  loadLastTimetableSubmission,
-  loadTimetableForStudent,
-  saveTimetableForStudent,
-  submitTimetableForTesting,
+  clearTimetableDraft,
+  DEFAULT_TIMETABLE_ACADEMIC_META,
+  loadTimetableDraft,
+  saveTimetableDraft,
+  submitFinalTimetableToFirestore,
 } from '../../services/timetableService';
 import {
   ClassFormValues,
   TimeSlotId,
+  TimetableAcademicMeta,
   TimetableClassEntry,
-  TimetableSubmissionRecord,
   TimetableValidationResult,
   WeekdayId,
 } from '../../types/timetable';
@@ -43,11 +43,18 @@ const EMPTY_FORM: ClassFormValues = {
 };
 
 export const TimetablePage: React.FC = () => {
-  const { user, studentProfile, studentData } = useAuth();
-  const uid = user?.uid || 'anonymous';
+  const navigate = useNavigate();
+  const {
+    user,
+    studentProfile,
+    studentTimetable,
+    studentAvailability,
+    studentData,
+    refreshStudentData,
+  } = useAuth();
+  const uid = user?.uid || '';
 
   const [classes, setClasses] = useState<TimetableClassEntry[]>([]);
-  const [isDemoData, setIsDemoData] = useState<boolean>(true);
   const [formValues, setFormValues] = useState<ClassFormValues>(EMPTY_FORM);
   const [editingClassId, setEditingClassId] = useState<string | null>(null);
   const [expandedDays, setExpandedDays] = useState<WeekdayId[]>([]);
@@ -55,28 +62,60 @@ export const TimetablePage: React.FC = () => {
     TimetableValidationResult['errors'] | null
   >(null);
 
-  const [lastSubmission, setLastSubmission] = useState<TimetableSubmissionRecord | null>(null);
   const [isDirtySinceSubmit, setIsDirtySinceSubmit] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const hydratedUidRef = useRef<string | null>(null);
 
-  // Hydrate initial timetable & last submission per authenticated UID
+  // Hydrate initial timetable: prefer persisted Firestore timetable if submitted;
+  // otherwise load local unsaved draft (which starts empty for new students).
   useEffect(() => {
-    const stored = loadTimetableForStudent(uid);
-    setClasses(stored.classes);
-    setIsDemoData(stored.isDemoData);
-    setLastSubmission(loadLastTimetableSubmission(uid));
-    setIsDirtySinceSubmit(false);
-  }, [uid]);
+    if (!uid) return;
+    if (hydratedUidRef.current === uid && isDirtySinceSubmit) {
+      return;
+    }
 
-  const persistClasses = (nextClasses: TimetableClassEntry[], nextIsDemo: boolean) => {
+    const draft = loadTimetableDraft(uid);
+    if (draft.classes.length > 0) {
+      setClasses(draft.classes);
+      setIsDirtySinceSubmit(true);
+    } else if (studentTimetable?.classes && studentTimetable.classes.length > 0) {
+      setClasses(studentTimetable.classes);
+      setIsDirtySinceSubmit(false);
+    } else if (hydratedUidRef.current !== uid) {
+      setClasses([]);
+      setIsDirtySinceSubmit(false);
+    }
+
+    hydratedUidRef.current = uid;
+  }, [uid, studentTimetable, isDirtySinceSubmit]);
+
+  const initialAcademicMeta: TimetableAcademicMeta = useMemo(
+    () => ({
+      department:
+        studentTimetable?.department ||
+        studentProfile?.department ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.department,
+      academicYear:
+        studentTimetable?.academicYear ||
+        studentProfile?.currentAcademicYear ||
+        studentProfile?.academicYear ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.academicYear,
+      semester:
+        studentTimetable?.semester ||
+        studentProfile?.currentSemester ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.semester,
+    }),
+    [studentProfile, studentTimetable]
+  );
+
+  const persistLocalDraft = (nextClasses: TimetableClassEntry[]) => {
     setClasses(nextClasses);
-    setIsDemoData(nextIsDemo);
     setIsDirtySinceSubmit(true);
-    saveTimetableForStudent(uid, {
-      classes: nextClasses,
-      isDemoData: nextIsDemo,
-      updatedAt: new Date().toISOString(),
-    });
+    setSubmitError(null);
+    if (uid) {
+      saveTimetableDraft(uid, nextClasses);
+    }
   };
 
   const gridMap = useMemo(() => buildTimetableGridMap(classes), [classes]);
@@ -99,7 +138,9 @@ export const TimetablePage: React.FC = () => {
   ) => {
     setFormValues((prev) => ({ ...prev, [field]: value }));
     if (validationErrors) {
-      setValidationErrors((prev) => (prev ? { ...prev, [field]: undefined, duplicate: undefined } : null));
+      setValidationErrors((prev) =>
+        prev ? { ...prev, [field]: undefined, duplicate: undefined } : null
+      );
     }
   };
 
@@ -194,7 +235,7 @@ export const TimetablePage: React.FC = () => {
     if (editingClassId === classId) {
       resetForm();
     }
-    persistClasses(nextClasses, nextClasses.some((c) => Boolean(c.isDemo)));
+    persistLocalDraft(nextClasses);
   };
 
   const handleFinalize = (e: React.FormEvent) => {
@@ -227,12 +268,11 @@ export const TimetablePage: React.FC = () => {
               facultyName: cleanFaculty,
               days,
               scheduleByDay,
-              isDemo: false,
               updatedAt: timestamp,
             }
           : cls
       );
-      persistClasses(nextClasses, nextClasses.some((c) => Boolean(c.isDemo)));
+      persistLocalDraft(nextClasses);
     } else {
       const newEntry: TimetableClassEntry = {
         id: `cls-${cleanCode}-${Date.now().toString(36)}`,
@@ -242,53 +282,49 @@ export const TimetablePage: React.FC = () => {
         facultyName: cleanFaculty,
         days,
         scheduleByDay,
-        isDemo: false,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      // Keep demo subjects cleanly separated if student hasn't cleared demo yet;
-      // student can remove demo subjects anytime with 1 click without losing their added classes.
-      const nextClasses = [...classes, newEntry];
-      persistClasses(nextClasses, isDemoData);
+      persistLocalDraft([...classes, newEntry]);
     }
 
     resetForm();
   };
 
-  const handleClearDemoOnly = () => {
-    const studentOnlyClasses = classes.filter((cls) => !cls.isDemo);
-    resetForm();
-    persistClasses(studentOnlyClasses, false);
-  };
-
   const handleClearAll = () => {
     resetForm();
-    clearTimetableSubmissionForStudent(uid);
-    setLastSubmission(null);
-    persistClasses([], false);
+    if (uid) {
+      clearTimetableDraft(uid);
+    }
+    setClasses([]);
+    setIsDirtySinceSubmit(Boolean(studentTimetable));
+    setSubmitError(null);
   };
 
-  const handleRestoreDemo = () => {
-    resetForm();
-    clearTimetableSubmissionForStudent(uid);
-    setLastSubmission(null);
-    persistClasses(cloneDemoTimetableClasses(), true);
-  };
-
-  const handleConfirmSubmit = async () => {
+  const handleConfirmSubmit = async (academicMeta: TimetableAcademicMeta) => {
+    if (isSubmitting) return;
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
-      const studentName = studentProfile?.fullName || user?.displayName || studentData.name;
-      const studentEmail = studentProfile?.email || user?.email || studentData.email;
-      const record = await submitTimetableForTesting({
-        studentUid: uid,
-        studentName,
-        studentEmail,
+      await submitFinalTimetableToFirestore({
         classes,
-        summary,
+        academicMeta,
+        studentFullName: studentData.name,
+        existingProfile: studentProfile,
+        existingTimetable: studentTimetable,
+        existingAvailability: studentAvailability,
       });
-      setLastSubmission(record);
+
       setIsDirtySinceSubmit(false);
+      await refreshStudentData();
+      navigate('/home', { replace: true });
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to save your timetable to Firestore. Please retry.';
+      setSubmitError(message);
+      throw err;
     } finally {
       setIsSubmitting(false);
     }
@@ -297,10 +333,9 @@ export const TimetablePage: React.FC = () => {
   return (
     <div className="min-h-[100dvh] bg-[#FAF8F5] text-[#202124] flex flex-col">
       <TimetableHeader
-        isDemoData={isDemoData}
-        isSubmitted={Boolean(lastSubmission && !isDirtySinceSubmit)}
+        isSubmitted={Boolean(studentTimetable?.submissionStatus === 'submitted' && !isDirtySinceSubmit)}
+        hasClasses={classes.length > 0}
         onClearAll={handleClearAll}
-        onRestoreDemo={handleRestoreDemo}
       />
 
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
@@ -332,11 +367,9 @@ export const TimetablePage: React.FC = () => {
             formSelectedDays={formValues.selectedDays}
             editingClassId={editingClassId}
             summary={summary}
-            isDemoData={isDemoData}
             onSelectEmptyCell={handleSelectEmptyCell}
             onSelectOccupiedCell={handleEditClass}
             onResetView={resetForm}
-            onClearDemoData={handleClearDemoOnly}
           />
 
           {/* RIGHT PANEL (26%): My Classes + Timetable Summary + Submit */}
@@ -346,7 +379,6 @@ export const TimetablePage: React.FC = () => {
               editingClassId={editingClassId}
               onEditClass={handleEditClass}
               onDeleteClass={handleDeleteClass}
-              onRestoreDemo={handleRestoreDemo}
             />
 
             <TimetableSummary summary={summary} />
@@ -355,9 +387,11 @@ export const TimetablePage: React.FC = () => {
               classes={classes}
               summary={summary}
               hasConflicts={internalConflicts.length > 0}
-              lastSubmission={lastSubmission}
+              savedTimetable={studentTimetable}
+              initialAcademicMeta={initialAcademicMeta}
               isDirtySinceSubmit={isDirtySinceSubmit}
               isSubmitting={isSubmitting}
+              submitError={submitError}
               onConfirmSubmit={handleConfirmSubmit}
             />
           </div>

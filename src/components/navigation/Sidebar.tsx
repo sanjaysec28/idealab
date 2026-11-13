@@ -1,20 +1,22 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { 
-  Compass, 
-  Globe, 
-  FolderKanban, 
-  Lightbulb, 
-  Users, 
-  Trophy, 
-  Award, 
-  Calendar, 
-  User, 
+import {
+  Home,
+  Compass,
+  Globe,
+  FolderKanban,
+  Lightbulb,
+  Users,
+  Trophy,
+  Award,
+  Calendar,
+  CalendarDays,
+  User,
   Settings,
   LogOut,
   Building2
 } from 'lucide-react';
-import { Logo } from './Logo';
+import { IdeaLabLogo } from '../shared/IdeaLabLogo';
 import { useAuth } from '../../context/AuthContext';
 
 export const Sidebar: React.FC = () => {
@@ -22,11 +24,13 @@ export const Sidebar: React.FC = () => {
   const { signOut } = useAuth();
 
   const navItems = [
+    { label: 'Home', path: '/home', icon: Home },
     { label: 'Discover', path: '/discover', icon: Compass },
     { label: 'Explore', path: '/explore', icon: Globe },
     { label: 'Projects', path: '/projects', icon: FolderKanban },
     { label: 'Ideas Hub', path: '/ideas', icon: Lightbulb },
     { label: 'Community', path: '/community', icon: Users },
+    { label: 'Timetable', path: '/timetable', icon: CalendarDays },
     { label: 'Leaderboard', path: '/leaderboard', icon: Trophy },
     { label: 'Achievements', path: '/achievements', icon: Award },
     { label: 'Events & Workshops', path: '/events', icon: Calendar },
@@ -41,8 +45,8 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-[#EEEEEE] h-screen sticky top-0 z-30">
-      <div className="p-6 border-b border-[#EEEEEE] flex items-center justify-between">
-        <Logo size="md" />
+      <div className="px-5 py-4 border-b border-[#EEEEEE] flex items-center justify-center">
+        <IdeaLabLogo variant="compact" />
       </div>
 
       <div className="px-4 py-3 bg-[#FFF0F1] mx-4 mt-4 rounded-xl flex items-center gap-3">

@@ -11,18 +11,12 @@ const AUTH_PATHS = [
   '/login',
   '/join',
   '/verify-email',
-  '/membership-request',
-  '/setup-profile',
-  '/pending-approval',
-  '/membership-rejected',
-  '/application-rejected',
   '/account-suspended',
-  '/timetable-setup',
   '/timetable',
 ];
 
 export const DevStateSwitcher: React.FC = () => {
-  const { authState, user, studentProfile, refreshMembership, signOut } = useAuth();
+  const { authState, user, studentProfile, refreshStudentData, signOut } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [forceVisible, setForceVisible] = useState(false);
   const [pathname, setPathname] = useState(() =>
@@ -83,15 +77,15 @@ export const DevStateSwitcher: React.FC = () => {
               Status: <strong className="text-[#E63946] uppercase">{authState}</strong>
             </p>
             {user?.email && <p className="truncate">{user.email}</p>}
-            {studentProfile?.registrationNumber && (
-              <p>Reg: {studentProfile.registrationNumber}</p>
+            {studentProfile?.department && (
+              <p className="truncate">{studentProfile.department}</p>
             )}
           </div>
 
           <div className="space-y-1.5 pt-1">
             <button
               type="button"
-              onClick={() => void refreshMembership()}
+              onClick={() => void refreshStudentData()}
               className="w-full px-3 py-2 rounded-xl bg-[#FAF8F5] hover:bg-[#EEEEEE] text-[#202124] text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />

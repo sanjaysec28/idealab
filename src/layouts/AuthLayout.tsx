@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
-import { Logo } from '../components/navigation/Logo';
+import { IdeaLabLogo } from '../components/shared/IdeaLabLogo';
 import { ASSETS } from '../utils/assets';
 import { ShieldCheck, Sparkles, Users } from 'lucide-react';
 
@@ -12,7 +12,7 @@ export const AuthLayout: React.FC = () => {
         <div className="absolute top-0 right-0 -mr-24 -mt-24 w-96 h-96 bg-[#E63946]/5 rounded-full blur-3xl pointer-events-none" />
 
         <div>
-          <Logo size="lg" />
+          <IdeaLabLogo variant="auth" />
         </div>
 
         <div className="my-auto py-12 space-y-6 max-w-lg">

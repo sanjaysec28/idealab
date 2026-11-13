@@ -1,14 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Bell, ChevronDown, LogOut, Sparkles, CheckCircle2, RotateCcw, Trash2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Bell, ChevronDown, LogOut, CheckCircle2, Home, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { IS_TIMETABLE_TESTING_MODE } from '../../config/featureFlags';
+import { IdeaLabLogo } from '../shared/IdeaLabLogo';
 
 interface TimetableHeaderProps {
-  isDemoData: boolean;
   isSubmitted: boolean;
+  hasClasses: boolean;
   onClearAll: () => void;
-  onRestoreDemo: () => void;
 }
 
 function getInitials(name: string): string {
@@ -19,13 +18,12 @@ function getInitials(name: string): string {
 }
 
 export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
-  isDemoData,
   isSubmitted,
+  hasClasses,
   onClearAll,
-  onRestoreDemo,
 }) => {
   const navigate = useNavigate();
-  const { user, studentProfile, studentData, signOut } = useAuth();
+  const { user, studentProfile, studentData, hasCompletedTimetable, signOut } = useAuth();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -33,9 +31,7 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
 
   const displayName = studentProfile?.fullName || user?.displayName || studentData.name;
   const displayEmail = studentProfile?.email || user?.email || studentData.email;
-  const academicSubtitle = studentProfile
-    ? `${studentProfile.department} • ${studentProfile.academicYear}`
-    : displayEmail || 'Verified Student';
+  const academicSubtitle = `${studentData.department} • ${studentData.year}`;
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -61,19 +57,13 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
         {/* LEFT: IDEA LAB Brand + Vertical Separator + Page Title */}
         <div className="flex items-center gap-4 min-w-0">
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-[#E63946] text-white shadow-sm shadow-[#E63946]/25">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-extrabold tracking-tight text-base leading-none text-[#202124]">
-                IDEA <span className="text-[#E63946]">LAB</span>
-              </span>
-              <span className="mt-1 text-[10px] font-semibold tracking-wider uppercase text-[#777777]">
-                Saveetha Engineering College
-              </span>
-            </div>
-          </div>
+          <Link
+            to={hasCompletedTimetable ? '/home' : '/timetable'}
+            aria-label="IDEA LAB"
+            className="flex items-center shrink-0"
+          >
+            <IdeaLabLogo variant="compact" />
+          </Link>
 
           <div className="hidden sm:block h-8 w-px bg-[#EAE6E1] shrink-0" />
 
@@ -82,11 +72,6 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
               <h1 className="text-base lg:text-lg font-bold tracking-tight text-[#202124] truncate">
                 Timetable Builder
               </h1>
-              {IS_TIMETABLE_TESTING_MODE && (
-                <span className="px-2 py-0.5 rounded-full bg-[#FFF0F1] border border-[#E63946]/20 text-[10px] font-semibold text-[#E63946] shrink-0">
-                  Testing Mode
-                </span>
-              )}
             </div>
             <p className="text-xs text-[#777777] truncate">
               Create and manage your class timetable for this semester.
@@ -94,8 +79,18 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
           </div>
         </div>
 
-        {/* RIGHT: Notification Bell + Authenticated Student Profile Pill */}
+        {/* RIGHT: Back to Home (when already completed) + Notification Bell + Profile Pill */}
         <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+          {hasCompletedTimetable && (
+            <Link
+              to="/home"
+              className="hidden sm:inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-[#FAF8F5] hover:bg-[#F5F1EC] border border-[#EAE6E1] text-xs font-semibold text-[#202124] transition-colors"
+            >
+              <Home className="w-3.5 h-3.5 text-[#E63946]" />
+              <span>IDEA LAB Home</span>
+            </Link>
+          )}
+
           {/* Notification Button */}
           <div className="relative" ref={notifRef}>
             <button
@@ -114,9 +109,9 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
             {showNotifications && (
               <div className="absolute right-0 mt-2 w-76 bg-white rounded-2xl shadow-xl border border-[#EAE6E1] p-4 z-50 space-y-3">
                 <div className="flex items-center justify-between border-b border-[#EAE6E1] pb-2.5">
-                  <span className="text-xs font-bold text-[#202124]">Timetable Updates</span>
-                  <span className="text-[10px] font-semibold text-[#E63946] bg-[#FFF0F1] px-2 py-0.5 rounded-full">
-                    Active
+                  <span className="text-xs font-bold text-[#202124]">Timetable Status</span>
+                  <span className="text-[10px] font-semibold text-[#177E48] bg-[#EAF8EE] px-2 py-0.5 rounded-full">
+                    Live Sync
                   </span>
                 </div>
                 <div className="space-y-2.5 text-xs">
@@ -129,16 +124,16 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
                   <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#EAE6E1]">
                     <p className="font-semibold text-[#202124]">
                       {isSubmitted
-                        ? 'Test Submission Saved'
-                        : isDemoData
-                        ? 'Sample Timetable Loaded'
-                        : 'Draft Saved Locally'}
+                        ? 'Timetable Saved'
+                        : hasClasses
+                        ? 'Ready to Submit'
+                        : 'Add Your Classes'}
                     </p>
                     <p className="text-[11px] text-[#777777] mt-0.5">
                       {isSubmitted
-                        ? 'Your semester timetable test submission is recorded for this session.'
-                        : isDemoData
-                        ? 'Edit sample classes or clear demo data to start from a blank grid.'
+                        ? 'Your semester timetable is saved to your IDEA LAB profile.'
+                        : hasClasses
+                        ? 'Click Submit Final Timetable to save your schedule and continue to IDEA LAB Home.'
                         : 'Add classes on the left panel or click any + period in the grid.'}
                     </p>
                   </div>
@@ -199,17 +194,16 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
                 </div>
 
                 <div className="py-1.5 space-y-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onRestoreDemo();
-                      setShowProfileMenu(false);
-                    }}
-                    className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-[#777777]" />
-                    <span>Load Sample Timetable</span>
-                  </button>
+                  {hasCompletedTimetable && (
+                    <Link
+                      to="/home"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2"
+                    >
+                      <Home className="w-3.5 h-3.5 text-[#777777]" />
+                      <span>IDEA LAB Home</span>
+                    </Link>
+                  )}
 
                   <button
                     type="button"
@@ -220,7 +214,7 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
                     className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5 text-[#777777]" />
-                    <span>Clear Timetable (Start Blank)</span>
+                    <span>Clear Unsaved Grid</span>
                   </button>
                 </div>
 
@@ -248,10 +242,13 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
             Create and manage your semester schedule
           </p>
         </div>
-        {IS_TIMETABLE_TESTING_MODE && (
-          <span className="px-2 py-0.5 rounded-full bg-[#FFF0F1] border border-[#E63946]/20 text-[10px] font-semibold text-[#E63946] shrink-0">
-            Testing Mode
-          </span>
+        {hasCompletedTimetable && (
+          <Link
+            to="/home"
+            className="px-2.5 py-1 rounded-xl bg-white border border-[#EAE6E1] text-[11px] font-semibold text-[#202124] shrink-0"
+          >
+            Home
+          </Link>
         )}
       </div>
     </header>

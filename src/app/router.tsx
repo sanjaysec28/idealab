@@ -9,9 +9,7 @@ import { OnboardingPage } from '../pages/auth/OnboardingPage';
 import { SignupPage } from '../pages/auth/SignupPage';
 import { LoginPage } from '../pages/auth/LoginPage';
 import { VerifyEmailPage } from '../pages/auth/VerifyEmailPage';
-import { MembershipRequestPage } from '../pages/auth/MembershipRequestPage';
-import { PendingApprovalPage } from '../pages/auth/PendingApprovalPage';
-import { MembershipRejectedPage } from '../pages/auth/MembershipRejectedPage';
+import { HomePage } from '../pages/home/HomePage';
 import { TimetablePage } from '../pages/timetable/TimetablePage';
 import { DiscoverPage } from '../pages/discover/DiscoverPage';
 import { ExplorePage } from '../pages/explore/ExplorePage';
@@ -62,40 +60,22 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: '/membership-request',
-    element: (
-      <AuthGuard>
-        <MembershipRequestPage />
-      </AuthGuard>
-    ),
-  },
-  {
-    path: '/pending-approval',
-    element: (
-      <AuthGuard>
-        <PendingApprovalPage />
-      </AuthGuard>
-    ),
-  },
-  {
-    path: '/membership-rejected',
-    element: (
-      <AuthGuard>
-        <MembershipRejectedPage />
-      </AuthGuard>
-    ),
-  },
-  {
-    path: '/application-rejected',
-    element: <Navigate to="/membership-rejected" replace />,
-  },
-  {
     path: '/timetable',
     element: (
       <AuthGuard>
         <VerifiedEmailGuard>
           <TimetablePage />
         </VerifiedEmailGuard>
+      </AuthGuard>
+    ),
+  },
+  {
+    path: '/home',
+    element: (
+      <AuthGuard>
+        <ProtectedRoute>
+          <HomePage />
+        </ProtectedRoute>
       </AuthGuard>
     ),
   },

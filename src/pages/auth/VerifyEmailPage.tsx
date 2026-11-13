@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MailCheck, RefreshCw, Send, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { Logo } from '../../components/navigation/Logo';
+import { IdeaLabLogo } from '../../components/shared/IdeaLabLogo';
 import { useAuth } from '../../context/AuthContext';
 import { useLoading } from '../../context/LoadingContext';
-import { IS_TIMETABLE_TESTING_MODE } from '../../config/featureFlags';
 import { AuthLoadingScreen } from '../../components/auth/AuthGuard';
 
 export const VerifyEmailPage: React.FC = () => {
@@ -36,6 +35,41 @@ export const VerifyEmailPage: React.FC = () => {
   }, [authState, user, navigate, resolveDestinationPath]);
 
   useEffect(() => {
+    if (authState !== 'unverified_email' || !user) return;
+
+    let active = true;
+    const syncVerificationQuietly = async () => {
+      if (!active) return;
+      try {
+        await refreshVerificationStatus();
+      } catch {
+        // Ignore transient network errors during background sync
+      }
+    };
+
+    void syncVerificationQuietly();
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void syncVerificationQuietly();
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    const intervalId = window.setInterval(() => {
+      void syncVerificationQuietly();
+    }, 4000);
+
+    return () => {
+      active = false;
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.clearInterval(intervalId);
+    };
+  }, [authState, user, refreshVerificationStatus]);
+
+  useEffect(() => {
     if (cooldown <= 0) return;
     const id = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
     return () => window.clearTimeout(id);
@@ -57,9 +91,7 @@ export const VerifyEmailPage: React.FC = () => {
       if (verified) {
         setNotice({
           type: 'success',
-          text: IS_TIMETABLE_TESTING_MODE
-            ? 'Email verified! Redirecting to Timetable Builder...'
-            : 'Email verified! Redirecting to membership request...',
+          text: 'Email verified! Redirecting you to IDEA LAB...',
         });
       } else {
         setNotice({
@@ -106,7 +138,7 @@ export const VerifyEmailPage: React.FC = () => {
   return (
     <div className="min-h-[100dvh] bg-[#FAF8F5] text-[#202124] flex flex-col justify-between px-5 py-6 sm:py-8">
       <div className="max-w-[430px] w-full mx-auto flex justify-center">
-        <Logo size="sm" />
+        <IdeaLabLogo variant="auth" />
       </div>
 
       <div className="max-w-[430px] w-full mx-auto my-6 bg-white rounded-2xl border border-[#EEEEEE] shadow-xs p-6 sm:p-8 space-y-5 text-center">
@@ -119,7 +151,7 @@ export const VerifyEmailPage: React.FC = () => {
             Verify your email
           </h1>
           <p className="text-xs text-[#777777] leading-relaxed">
-            We sent a verification link to your email address. Verify your email before submitting your IDEA LAB membership request.
+            We sent a verification link to your email address. Verify your email to build your timetable and unlock IDEA LAB.
           </p>
         </div>
 

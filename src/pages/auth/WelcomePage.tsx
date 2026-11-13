@@ -1,39 +1,20 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ASSETS } from '../../utils/assets';
+import { IdeaLabLogo } from '../../components/shared/IdeaLabLogo';
 
 export const WelcomePage: React.FC = () => {
   return (
-    <main className="h-[100dvh] md:h-auto md:min-h-[100dvh] w-full bg-[#FAF8F5] text-[#202124] flex flex-col justify-between overflow-hidden md:overflow-visible lg:flex-row lg:h-[100dvh] lg:overflow-hidden">
+    <main className="min-h-[100dvh] md:h-auto md:min-h-[100dvh] w-full bg-[#FAF8F5] text-[#202124] flex flex-col justify-between overflow-x-clip lg:flex-row lg:h-[100dvh] lg:overflow-hidden">
       {/* Left Authentication Panel on Desktop / Unwrapped via display:contents on Mobile & Tablet */}
       <section className="contents lg:flex lg:flex-col lg:justify-center lg:w-[40%] xl:w-[39%] lg:h-full lg:bg-transparent lg:relative lg:z-10 lg:px-10 xl:px-14 lg:py-10 lg:overflow-hidden">
-        {/* 1. Brand Lockup + Heading (Tablet & Desktop only — mob-card.png already includes mobile branding & heading) */}
-        <div className="hidden md:flex order-1 lg:order-none relative z-10 w-full max-w-[440px] mx-auto px-5 pt-5 pb-3 lg:p-0 flex-col items-center lg:items-start text-center lg:text-left">
-          {/* Brand Lockup */}
-          <div className="flex items-center gap-3 lg:gap-3.5">
-            <div className="w-9 h-9 lg:w-11 lg:h-11 rounded-xl lg:rounded-2xl bg-[#E63946] flex items-center justify-center shadow-sm shadow-[#E63946]/25 shrink-0">
-              <svg className="w-5 h-5 lg:w-6 lg:h-6 text-[#FFE066]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z" />
-              </svg>
-            </div>
-            <div className="flex flex-col items-start">
-              <span className="text-xl lg:text-[22px] font-extrabold tracking-tight leading-none text-[#202124]">
-                IDEA <span className="text-[#E63946]">LAB</span>
-              </span>
-              <span className="hidden lg:block mt-1 text-[10px] font-semibold tracking-[0.06em] uppercase text-[#555555]">
-                AICTE · Saveetha Engineering College
-              </span>
-            </div>
-          </div>
-
-          <p className="mt-1 text-[10px] font-semibold tracking-[0.06em] uppercase text-[#555555] lg:hidden">
-            AICTE · Saveetha Engineering College
-          </p>
+        {/* 1. Brand Lockup + Heading (All Viewports — uses official logo.png without baked-in mobile logo) */}
+        <div className="flex order-1 lg:order-none relative z-10 w-full max-w-[440px] mx-auto px-5 pt-6 pb-3 md:pt-7 lg:p-0 flex-col items-center lg:items-start text-center lg:text-left">
+          <IdeaLabLogo variant="auth" />
 
           {/* Main Heading */}
-          <div className="mt-4 lg:mt-11">
-            {/* Tablet & Desktop Heading (>= 768px) */}
-            <h1 className="text-4xl lg:text-[36px] xl:text-[42px] font-extrabold tracking-tight leading-[1.15] text-[#202124]">
+          <div className="mt-4 sm:mt-5 lg:mt-10">
+            <h1 className="text-[28px] sm:text-4xl lg:text-[36px] xl:text-[42px] font-extrabold tracking-tight leading-[1.15] text-[#202124]">
               Innovate.{' '}
               <span className="text-[#E63946] relative inline-block">
                 Build.
@@ -51,15 +32,14 @@ export const WelcomePage: React.FC = () => {
               Collaborate.
             </h1>
 
-            {/* Tablet & Desktop Subtitle */}
-            <p className="mt-3 lg:mt-4 text-sm lg:text-[15px] text-[#5F6368] font-medium leading-relaxed">
+            <p className="mt-2 sm:mt-3 lg:mt-4 text-xs sm:text-sm lg:text-[15px] text-[#5F6368] font-medium leading-relaxed">
               The digital home for IDEA LAB members.
             </p>
           </div>
         </div>
 
         {/* 3. Primary Get Started CTA & Sign-In Link */}
-        <div className="order-3 lg:order-none relative z-10 flex-1 flex flex-col justify-center md:flex-none -mt-3 md:mt-0 lg:mt-9 bg-transparent px-5 pt-1 pb-[max(20px,env(safe-area-inset-bottom))] md:pt-4 md:pb-10 lg:p-0 w-full lg:max-w-[440px] lg:mx-auto shrink-0">
+        <div className="order-3 lg:order-none relative z-10 flex-1 flex flex-col justify-center md:flex-none mt-2 md:mt-0 lg:mt-9 bg-transparent px-5 pt-2 pb-[max(20px,env(safe-area-inset-bottom))] md:pt-4 md:pb-10 lg:p-0 w-full lg:max-w-[440px] lg:mx-auto shrink-0">
           <div className="max-w-md mx-auto lg:max-w-none w-full space-y-3 lg:space-y-3.5">
             <Link
               to="/signup"
@@ -101,16 +81,15 @@ export const WelcomePage: React.FC = () => {
       </section>
 
       {/* 2. Responsive Illustration Panel with Natural CSS Mask Blending */}
-      <section className="order-2 lg:order-none w-full flex-none md:flex-none lg:-ml-12 xl:-ml-16 lg:w-[calc(60%+3rem)] xl:w-[calc(61%+4rem)] lg:h-full flex items-start md:items-center justify-center overflow-hidden p-0 md:px-8 md:py-4 lg:p-0 bg-transparent">
-        <picture className="block w-full h-auto md:max-w-[480px] lg:max-w-none lg:h-full overflow-hidden welcome-hero-mask">
-          <source media="(max-width: 767px)" srcSet={ASSETS.welcomeHeroMobile} />
+      <section className="order-2 lg:order-none w-full flex-none md:flex-none lg:-ml-12 xl:-ml-16 lg:w-[calc(60%+3rem)] xl:w-[calc(61%+4rem)] lg:h-full flex items-center justify-center overflow-hidden p-0 md:px-8 md:py-4 lg:p-0 bg-transparent">
+        <div className="w-full h-[220px] sm:h-[280px] md:h-auto md:max-w-[480px] lg:max-w-none lg:h-full overflow-hidden welcome-hero-mask">
           <img
             src={ASSETS.welcomeHero}
             alt="IDEA LAB students collaborating on Saveetha Engineering College campus"
             referrerPolicy="no-referrer"
-            className="w-full h-auto max-h-[calc(100dvh-176px)] md:max-h-none lg:h-full block object-cover object-top md:object-center lg:object-[46%_45%] select-none"
+            className="w-full h-full block object-cover object-[52%_36%] lg:object-[46%_45%] select-none"
           />
-        </picture>
+        </div>
       </section>
     </main>
   );

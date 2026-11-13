@@ -1,3 +1,5 @@
+import { Timestamp } from 'firebase/firestore';
+
 export type WeekdayId = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
 
 export type TimeSlotId = 'slot-1' | 'slot-2' | 'slot-3' | 'slot-4';
@@ -12,6 +14,8 @@ export interface TimeSlotOption {
   id: TimeSlotId;
   label: string;
   shortLabel: string;
+  startTime: string;
+  endTime: string;
 }
 
 /**
@@ -27,7 +31,6 @@ export interface TimetableClassEntry {
   facultyName: string;
   days: WeekdayId[];
   scheduleByDay: DaySlotSchedule;
-  isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -69,13 +72,61 @@ export interface TimetableSummaryMetrics {
   utilizationPercent: number;
 }
 
+export interface TimetableAcademicMeta {
+  department: string;
+  academicYear: string;
+  semester: string;
+}
+
+export interface TimetableFreeSlotDetail {
+  day: WeekdayId;
+  slotId: TimeSlotId;
+  startTime: string;
+  endTime: string;
+  label: string;
+}
+
+export interface StudentTimetableDoc {
+  uid: string;
+  semester: string;
+  academicYear: string;
+  department: string;
+  classes: TimetableClassEntry[];
+  selectedWeekdays: WeekdayId[];
+  selectedTimeSlots: TimeSlotId[];
+  subjectCodes: string[];
+  subjectNames: string[];
+  facultyNames: string[];
+  totalSubjects: number;
+  classDays: number;
+  totalClasses: number;
+  submissionStatus: 'submitted';
+  version: number;
+  submittedAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface StudentAvailabilityDoc {
+  uid: string;
+  freeSlots: TimetableFreeSlotDetail[];
+  totalFreePeriods: number;
+  totalOccupiedPeriods: number;
+  utilizationPercentage: number;
+  isOptedIn: boolean;
+  hasSubmittedTimetable: boolean;
+  timetableVersion: number;
+  updatedAt?: Timestamp;
+}
+
 export interface TimetableSubmissionRecord {
   submissionId: string;
-  mode: 'testing-mock';
+  mode: 'firestore';
+  version: number;
   submittedAt: string;
   studentUid: string;
-  studentName: string;
-  studentEmail: string;
+  semester: string;
+  academicYear: string;
+  department: string;
   classes: TimetableClassEntry[];
   summary: TimetableSummaryMetrics;
 }
@@ -90,10 +141,10 @@ export const WEEKDAYS: WeekdayOption[] = [
 ];
 
 export const TIME_SLOTS: TimeSlotOption[] = [
-  { id: 'slot-1', label: '8:00 AM – 9:30 AM', shortLabel: '8:00 AM' },
-  { id: 'slot-2', label: '9:45 AM – 11:15 AM', shortLabel: '9:45 AM' },
-  { id: 'slot-3', label: '1:15 PM – 2:45 PM', shortLabel: '1:15 PM' },
-  { id: 'slot-4', label: '3:00 PM – 4:30 PM', shortLabel: '3:00 PM' },
+  { id: 'slot-1', label: '8:00 AM – 9:30 AM', shortLabel: '8:00 AM', startTime: '8:00 AM', endTime: '9:30 AM' },
+  { id: 'slot-2', label: '9:45 AM – 11:15 AM', shortLabel: '9:45 AM', startTime: '9:45 AM', endTime: '11:15 AM' },
+  { id: 'slot-3', label: '1:15 PM – 2:45 PM', shortLabel: '1:15 PM', startTime: '1:15 PM', endTime: '2:45 PM' },
+  { id: 'slot-4', label: '3:00 PM – 4:30 PM', shortLabel: '3:00 PM', startTime: '3:00 PM', endTime: '4:30 PM' },
 ];
 
 export const TOTAL_WEEKLY_PERIODS = WEEKDAYS.length * TIME_SLOTS.length; // 6 * 4 = 24

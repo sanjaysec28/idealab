@@ -48,7 +48,19 @@ service cloud.firestore {
       );
     }
 
-    function isValidStudentCommon(data, uid) {
+    function isOptionalBoundedString(data, field, minLen, maxLen) {
+      return !(field in data) || (
+        data[field] is string
+        && data[field].size() >= minLen
+        && data[field].size() <= maxLen
+      );
+    }
+
+    function isOptionalBool(data, field) {
+      return !(field in data) || data[field] is bool;
+    }
+
+    function isValidStudentFields(data, uid) {
       return data.uid is string
         && data.uid == uid
         && isValidId(data.uid)
@@ -56,31 +68,27 @@ service cloud.firestore {
         && data.fullName.size() >= 2
         && data.fullName.size() <= 100
         && isValidEmail(data.email)
-        && data.registrationNumber is string
-        && data.registrationNumber.size() >= 4
-        && data.registrationNumber.size() <= 32
-        && data.registrationNumber.matches('^[A-Za-z0-9\\-]+$')
-        && data.department is string
-        && data.department.size() >= 2
-        && data.department.size() <= 80
-        && data.academicYear is string
-        && data.academicYear.size() >= 2
-        && data.academicYear.size() <= 24
-        && data.membershipStatus in ['pending', 'approved', 'rejected']
-        && data.createdAt is timestamp;
+        && data.createdAt is timestamp
+        && (!( 'registrationNumber' in data ) || (
+          data.registrationNumber is string
+          && data.registrationNumber.size() >= 4
+          && data.registrationNumber.size() <= 32
+          && data.registrationNumber.matches('^[A-Za-z0-9\\-]+$')
+        ))
+        && isOptionalBoundedString(data, 'department', 2, 80)
+        && isOptionalBoundedString(data, 'academicYear', 2, 24)
+        && isOptionalBoundedString(data, 'currentAcademicYear', 2, 24)
+        && isOptionalBoundedString(data, 'currentSemester', 1, 24)
+        && isOptionalBoundedString(data, 'photoURL', 1, 500)
+        && isOptionalBool(data, 'timetableCompleted')
+        && isOptionalBool(data, 'profileSetupCompleted')
+        && (!( 'timetableStatus' in data ) || data.timetableStatus in ['not_submitted', 'submitted'])
+        && (!( 'timetableUpdatedAt' in data ) || data.timetableUpdatedAt is timestamp)
+        && (!( 'updatedAt' in data ) || data.updatedAt is timestamp);
     }
 
-    function isValidStudentCreate(data, uid) {
-      return data.keys().hasAll([
-          'uid',
-          'fullName',
-          'email',
-          'registrationNumber',
-          'department',
-          'academicYear',
-          'membershipStatus',
-          'createdAt'
-        ])
+    function isValidLiveStudentCreate(data, uid) {
+      return data.keys().hasAll(['uid', 'fullName', 'email', 'createdAt'])
         && data.keys().hasOnly([
           'uid',
           'fullName',
@@ -88,29 +96,26 @@ service cloud.firestore {
           'registrationNumber',
           'department',
           'academicYear',
-          'membershipStatus',
+          'currentAcademicYear',
+          'currentSemester',
+          'photoURL',
+          'timetableCompleted',
+          'timetableStatus',
+          'timetableUpdatedAt',
+          'profileSetupCompleted',
           'createdAt',
           'updatedAt'
         ])
-        && isValidStudentCommon(data, uid)
+        && isValidStudentFields(data, uid)
         && data.uid == request.auth.uid
         && data.email.lower() == request.auth.token.email.lower()
-        && data.membershipStatus == 'pending'
         && data.createdAt == request.time
-        && (!('updatedAt' in data) || data.updatedAt == request.time);
+        && (!( 'updatedAt' in data ) || data.updatedAt == request.time)
+        && (!( 'timetableUpdatedAt' in data ) || data.timetableUpdatedAt == request.time);
     }
 
-    function isValidStudentUpdate(data, uid) {
-      return data.keys().hasAll([
-          'uid',
-          'fullName',
-          'email',
-          'registrationNumber',
-          'department',
-          'academicYear',
-          'membershipStatus',
-          'createdAt'
-        ])
+    function isValidLiveStudentSelfUpdate(data, prev, uid) {
+      return data.keys().hasAll(['uid', 'fullName', 'email', 'createdAt'])
         && data.keys().hasOnly([
           'uid',
           'fullName',
@@ -118,62 +123,252 @@ service cloud.firestore {
           'registrationNumber',
           'department',
           'academicYear',
+          'currentAcademicYear',
+          'currentSemester',
+          'photoURL',
+          'timetableCompleted',
+          'timetableStatus',
+          'timetableUpdatedAt',
+          'profileSetupCompleted',
           'membershipStatus',
-          'createdAt',
-          'updatedAt',
           'approvedAt',
           'approvedBy',
-          'rejectionReason'
+          'rejectionReason',
+          'createdAt',
+          'updatedAt'
         ])
-        && isValidStudentCommon(data, uid)
-        && data.uid == existing().uid
-        && data.email == existing().email
-        && data.createdAt == existing().createdAt
-        && (!('updatedAt' in data) || data.updatedAt == request.time)
-        && (!('approvedBy' in data) || (data.approvedBy is string && data.approvedBy.size() >= 1 && data.approvedBy.size() <= 128))
-        && (!('approvedAt' in data) || data.approvedAt is timestamp)
-        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500));
+        && isValidStudentFields(data, uid)
+        && data.uid == prev.uid
+        && data.email == prev.email
+        && data.createdAt == prev.createdAt
+        && data.updatedAt == request.time
+        && (!( 'timetableUpdatedAt' in data ) || data.timetableUpdatedAt == request.time || (('timetableUpdatedAt' in prev) && data.timetableUpdatedAt == prev.timetableUpdatedAt))
+        && data.diff(prev).affectedKeys().hasOnly([
+          'fullName',
+          'registrationNumber',
+          'department',
+          'academicYear',
+          'currentAcademicYear',
+          'currentSemester',
+          'photoURL',
+          'timetableCompleted',
+          'timetableStatus',
+          'timetableUpdatedAt',
+          'profileSetupCompleted',
+          'updatedAt'
+        ]);
+    }
+
+    function isValidAdminStudentUpdate(data, prev, uid) {
+      return isValidStudentFields(data, uid)
+        && data.keys().hasOnly([
+          'uid',
+          'fullName',
+          'email',
+          'registrationNumber',
+          'department',
+          'academicYear',
+          'currentAcademicYear',
+          'currentSemester',
+          'photoURL',
+          'timetableCompleted',
+          'timetableStatus',
+          'timetableUpdatedAt',
+          'profileSetupCompleted',
+          'membershipStatus',
+          'approvedAt',
+          'approvedBy',
+          'rejectionReason',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid == prev.uid
+        && data.email == prev.email
+        && data.createdAt == prev.createdAt;
+    }
+
+    function isValidTimetableWrite(data, uid) {
+      return data.keys().hasAll([
+          'uid',
+          'semester',
+          'academicYear',
+          'department',
+          'classes',
+          'selectedWeekdays',
+          'selectedTimeSlots',
+          'subjectCodes',
+          'subjectNames',
+          'facultyNames',
+          'totalSubjects',
+          'classDays',
+          'totalClasses',
+          'submissionStatus',
+          'version',
+          'submittedAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'semester',
+          'academicYear',
+          'department',
+          'classes',
+          'selectedWeekdays',
+          'selectedTimeSlots',
+          'subjectCodes',
+          'subjectNames',
+          'facultyNames',
+          'totalSubjects',
+          'classDays',
+          'totalClasses',
+          'submissionStatus',
+          'version',
+          'submittedAt',
+          'updatedAt'
+        ])
+        && data.uid == uid
+        && data.uid == request.auth.uid
+        && data.semester is string && data.semester.size() >= 1 && data.semester.size() <= 24
+        && data.academicYear is string && data.academicYear.size() >= 2 && data.academicYear.size() <= 24
+        && data.department is string && data.department.size() >= 2 && data.department.size() <= 80
+        && data.classes is list && data.classes.size() >= 1 && data.classes.size() <= 24 && data.classes[0] is map
+        && data.selectedWeekdays is list && data.selectedWeekdays.size() >= 1 && data.selectedWeekdays.size() <= 6 && data.selectedWeekdays.hasOnly(['mon', 'tue', 'wed', 'thu', 'fri', 'sat'])
+        && data.selectedTimeSlots is list && data.selectedTimeSlots.size() >= 1 && data.selectedTimeSlots.size() <= 4 && data.selectedTimeSlots.hasOnly(['slot-1', 'slot-2', 'slot-3', 'slot-4'])
+        && data.subjectCodes is list && data.subjectCodes.size() >= 1 && data.subjectCodes.size() <= 24 && data.subjectCodes[0] is string
+        && data.subjectNames is list && data.subjectNames.size() >= 1 && data.subjectNames.size() <= 24 && data.subjectNames[0] is string
+        && data.facultyNames is list && data.facultyNames.size() >= 1 && data.facultyNames.size() <= 24 && data.facultyNames[0] is string
+        && data.totalSubjects is int && data.totalSubjects >= 1 && data.totalSubjects <= 24
+        && data.classDays is int && data.classDays >= 1 && data.classDays <= 6
+        && data.totalClasses is int && data.totalClasses >= 1 && data.totalClasses <= 24
+        && data.submissionStatus == 'submitted'
+        && data.version is int && data.version >= 1 && data.version <= 1000
+        && data.submittedAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function isValidAvailabilityWrite(data, uid) {
+      return data.keys().hasAll([
+          'uid',
+          'freeSlots',
+          'totalFreePeriods',
+          'totalOccupiedPeriods',
+          'utilizationPercentage',
+          'isOptedIn',
+          'hasSubmittedTimetable',
+          'timetableVersion',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'freeSlots',
+          'totalFreePeriods',
+          'totalOccupiedPeriods',
+          'utilizationPercentage',
+          'isOptedIn',
+          'hasSubmittedTimetable',
+          'timetableVersion',
+          'updatedAt'
+        ])
+        && data.uid == uid
+        && data.uid == request.auth.uid
+        && data.freeSlots is list && data.freeSlots.size() <= 24 && (data.freeSlots.size() == 0 || data.freeSlots[0] is map)
+        && data.totalFreePeriods is int && data.totalFreePeriods >= 0 && data.totalFreePeriods <= 24
+        && data.totalOccupiedPeriods is int && data.totalOccupiedPeriods >= 0 && data.totalOccupiedPeriods <= 24
+        && (data.totalFreePeriods + data.totalOccupiedPeriods) == 24
+        && data.utilizationPercentage is int && data.utilizationPercentage >= 0 && data.utilizationPercentage <= 100
+        && data.isOptedIn is bool
+        && data.hasSubmittedTimetable is bool
+        && data.timetableVersion is int && data.timetableVersion >= 1 && data.timetableVersion <= 1000
+        && data.updatedAt == request.time;
     }
 
     match /students/{uid} {
-      // PII protection: only the owning student or an authorized admin can read a student document
       allow get: if isValidId(uid) && (isOwner(uid) || isAdmin());
 
-      // Query enforcer: never call get()/exists() in allow list; enforce ownership or verified bootstrapped admin
+      // Never use exists()/get() in list queries
       allow list: if isSignedIn() && (
         resource.data.uid == request.auth.uid ||
         (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
       );
 
-      // Students can create only their own initial PENDING request after verifying their email
       allow create: if isValidId(uid)
         && isOwner(uid)
         && isVerifiedStudent()
-        && isValidStudentCreate(incoming(), uid);
+        && isValidLiveStudentCreate(incoming(), uid);
 
-      // Tiered updates:
-      // - Authorized admins may approve/reject or update metadata
-      // - Approved & verified students may update ONLY safe profile fields (never membershipStatus/approvedAt/approvedBy)
-      allow update: if isValidId(uid)
-        && isValidStudentUpdate(incoming(), uid)
-        && (
+      allow update: if isValidId(uid) && (
+        (isAdmin() && isValidAdminStudentUpdate(incoming(), existing(), uid)) ||
+        (isOwner(uid) && isVerifiedStudent() && isValidLiveStudentSelfUpdate(incoming(), existing(), uid))
+      );
+
+      allow delete: if isValidId(uid) && isAdmin();
+
+      match /timetable/{docId} {
+        allow get: if isValidId(uid) && docId == 'current' && (isOwner(uid) || isAdmin());
+        allow list: if isValidId(uid) && docId == 'current' && isSignedIn() && (
+          resource.data.uid == request.auth.uid ||
+          (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+        );
+
+        allow create: if isValidId(uid)
+          && docId == 'current'
+          && isOwner(uid)
+          && isVerifiedStudent()
+          && isValidTimetableWrite(incoming(), uid);
+
+        allow update: if isValidId(uid)
+          && docId == 'current'
+          && isOwner(uid)
+          && isVerifiedStudent()
+          && isValidTimetableWrite(incoming(), uid)
+          && incoming().uid == existing().uid
+          && incoming().version >= existing().version;
+
+        allow delete: if isValidId(uid) && isAdmin();
+      }
+
+      match /availability/{docId} {
+        allow get: if isValidId(uid) && docId == 'current' && (
+          isOwner(uid) ||
           isAdmin() ||
           (
-            isOwner(uid)
-            && isVerifiedStudent()
-            && existing().membershipStatus == 'approved'
-            && incoming().membershipStatus == existing().membershipStatus
-            && incoming().updatedAt == request.time
-            && incoming().diff(existing()).affectedKeys().hasOnly([
-              'fullName',
-              'department',
-              'academicYear',
-              'updatedAt'
-            ])
+            isVerifiedStudent()
+            && existing().isOptedIn == true
+            && existing().hasSubmittedTimetable == true
+            && existing().totalFreePeriods > 0
           )
         );
 
-      allow delete: if isValidId(uid) && isAdmin();
+        allow list: if isValidId(uid) && docId == 'current' && isSignedIn() && (
+          resource.data.uid == request.auth.uid ||
+          (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com') ||
+          (
+            isEmailVerified()
+            && resource.data.isOptedIn == true
+            && resource.data.hasSubmittedTimetable == true
+            && resource.data.totalFreePeriods > 0
+          )
+        );
+
+        allow create: if isValidId(uid)
+          && docId == 'current'
+          && isOwner(uid)
+          && isVerifiedStudent()
+          && isValidAvailabilityWrite(incoming(), uid);
+
+        allow update: if isValidId(uid)
+          && docId == 'current'
+          && isOwner(uid)
+          && isVerifiedStudent()
+          && isValidAvailabilityWrite(incoming(), uid)
+          && incoming().uid == existing().uid
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['isOptedIn', 'updatedAt']) ||
+            incoming().timetableVersion >= existing().timetableVersion
+          );
+
+        allow delete: if isValidId(uid) && isAdmin();
+      }
     }
 
     match /admins/{uid} {

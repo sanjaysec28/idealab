@@ -13,11 +13,11 @@ export const AppSplashOverlay: React.FC = () => {
     dismissSplashIfReady,
     withBackgroundRefresh,
   } = useLoading();
-  const { refreshMembership } = useAuth();
+  const { refreshStudentData } = useAuth();
 
   const handleRetry = async () => {
     clearInitError();
-    await withBackgroundRefresh(refreshMembership());
+    await withBackgroundRefresh(refreshStudentData());
   };
 
   return (

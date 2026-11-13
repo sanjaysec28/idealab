@@ -5,19 +5,20 @@
 
 export const ASSETS = {
   logo: {
-    icon: '/images/desk-card.png',
-    banner: '/images/desk-card.png',
+    full: '/images/logo.png',
+    icon: '/images/logo.png',
+    banner: '/images/logo.png',
   },
-  ideaLabLogo: '/images/desk-card.png',
-  splashScreen: '/images/splash-screen.png',
+  ideaLabLogo: '/images/logo.png',
+  splashScreen: '/images/logo.png',
   welcomeHero: '/images/desk-card.png',
-  welcomeHeroMobile: '/images/mob-card.png',
+  welcomeHeroMobile: '/images/desk-card.png',
   onboardingExplore: '/images/desk-card.png',
   onboardingCollaborate: '/images/desk-card.png',
   onboardingCreate: '/images/desk-card.png',
   authSideIllustration: '/images/desk-card.png',
   joinSideIllustration: '/images/desk-card.png',
-  pendingApproval: '/images/mob-card.png',
+  pendingApproval: '/images/desk-card.png',
   campus: {
     mainBuilding: '/images/desk-card.png',
     ideaLabInterior: '/images/desk-card.png',
@@ -53,7 +54,39 @@ export const ASSETS = {
   placeholders: {
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
     project: '/images/desk-card.png',
-  }
+  },
+  home: {
+    heroDesktop: '/images/desk-card.png',
+    heroMobile: '/images/desk-card.png',
+    projectCovers: {
+      smartCampusAssistant:
+        'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=900&q=80',
+      greenTrack:
+        'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=900&q=80',
+      virtualLabSimulator:
+        'https://images.unsplash.com/photo-1593508512255-86ab42a8e620?auto=format&fit=crop&w=900&q=80',
+    },
+    eventThumbnails: {
+      aiInnovationWorkshop:
+        'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=600&q=80',
+      iotHackathon:
+        'https://images.unsplash.com/photo-1515187029135-18ee286d815b?auto=format&fit=crop&w=600&q=80',
+    },
+    avatars: {
+      ananya:
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+      divya:
+        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
+      arun:
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
+      meena:
+        'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=300&q=80',
+      rohan:
+        'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
+      karthik:
+        'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=300&q=80',
+    },
+  },
 };
 
 export const getStudentAvatar = (index: number) => {
@@ -67,3 +100,4 @@ export const getProjectImage = (index: number) => {
 export const getEventImage = (index: number) => {
   return ASSETS.events[index % ASSETS.events.length];
 };
+

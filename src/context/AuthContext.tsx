@@ -17,19 +17,23 @@ import {
   signInStudentAccount,
   signOutStudentAccount,
 } from '../firebase/authService';
-import { IS_TIMETABLE_TESTING_MODE } from '../config/featureFlags';
 import {
   getStudentProfile,
-  submitStudentMembershipRequest,
   subscribeToStudentProfile,
 } from '../firebase/studentService';
 import {
-  AuthStateStatus,
-  MembershipRequestInput,
-  SignInInput,
-  SignupInput,
-  StudentProfileDoc,
-} from '../types/auth';
+  getStudentAvailability,
+  getStudentTimetable,
+  subscribeToStudentAvailability,
+  subscribeToStudentTimetable,
+} from '../services/timetableService';
+import { AuthStateStatus, SignInInput, SignupInput, StudentProfileDoc } from '../types/auth';
+import { StudentAvailabilityDoc, StudentTimetableDoc } from '../types/timetable';
+import {
+  deriveAuthState,
+  hasSubmittedStudentTimetable,
+  resolveDestinationForState,
+} from '../utils/authRouting';
 
 export interface DerivedStudentData {
   name: string;
@@ -37,12 +41,16 @@ export interface DerivedStudentData {
   rollNumber: string;
   department: string;
   year: string;
+  semester: string;
   submittedDate?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   studentProfile: StudentProfileDoc | null;
+  studentTimetable: StudentTimetableDoc | null;
+  studentAvailability: StudentAvailabilityDoc | null;
+  hasCompletedTimetable: boolean;
   authState: AuthStateStatus;
   isAuthReady: boolean;
   isBusy: boolean;
@@ -53,8 +61,7 @@ interface AuthContextType {
   resendVerificationEmail: () => Promise<void>;
   refreshVerificationStatus: () => Promise<boolean>;
   sendPasswordReset: (email: string) => Promise<void>;
-  submitMembershipRequest: (input: MembershipRequestInput) => Promise<StudentProfileDoc>;
-  refreshMembership: () => Promise<StudentProfileDoc | null>;
+  refreshStudentData: () => Promise<void>;
   signOut: () => Promise<void>;
   resolveDestinationPath: (intendedPath?: string, overrideState?: AuthStateStatus) => string;
   studentData: DerivedStudentData;
@@ -62,52 +69,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const PUBLIC_OR_STATUS_PATHS = new Set([
-  '/',
-  '/splash',
-  '/welcome',
-  '/onboarding',
-  '/signup',
-  '/login',
-  '/join',
-  '/verify-email',
-  '/membership-request',
-  '/pending-approval',
-  '/membership-rejected',
-  '/application-rejected',
-  '/account-suspended',
-]);
-
-function deriveAuthState(
-  isAuthReady: boolean,
-  user: User | null,
-  emailVerified: boolean,
-  isProfileLoaded: boolean,
-  profile: StudentProfileDoc | null
-): AuthStateStatus {
-  if (!isAuthReady) return 'loading';
-  if (!user) return 'unauthenticated';
-  if (!emailVerified) return 'unverified_email';
-  if (!isProfileLoaded) return 'loading';
-  if (!profile) return 'needs_membership_request';
-
-  switch (profile.membershipStatus) {
-    case 'approved':
-      return 'approved';
-    case 'rejected':
-      return 'rejected';
-    case 'pending':
-    default:
-      return 'pending';
-  }
-}
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [emailVerified, setEmailVerified] = useState<boolean>(false);
   const [studentProfile, setStudentProfile] = useState<StudentProfileDoc | null>(null);
+  const [studentTimetable, setStudentTimetable] = useState<StudentTimetableDoc | null>(null);
+  const [studentAvailability, setStudentAvailability] = useState<StudentAvailabilityDoc | null>(null);
   const [isAuthReady, setIsAuthReady] = useState<boolean>(false);
   const [isProfileLoaded, setIsProfileLoaded] = useState<boolean>(false);
+  const [isTimetableLoaded, setIsTimetableLoaded] = useState<boolean>(false);
   const [isBusy, setIsBusy] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -115,44 +85,84 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
+    let unsubscribeTimetable: (() => void) | null = null;
+    let unsubscribeAvailability: (() => void) | null = null;
     let active = true;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      if (!active) return;
-
+    const cleanupListeners = () => {
       if (unsubscribeProfile) {
         unsubscribeProfile();
         unsubscribeProfile = null;
       }
+      if (unsubscribeTimetable) {
+        unsubscribeTimetable();
+        unsubscribeTimetable = null;
+      }
+      if (unsubscribeAvailability) {
+        unsubscribeAvailability();
+        unsubscribeAvailability = null;
+      }
+    };
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!active) return;
+
+      cleanupListeners();
 
       if (!firebaseUser) {
         setUser(null);
         setEmailVerified(false);
         setIsAuthReady(true);
         setStudentProfile(null);
+        setStudentTimetable(null);
+        setStudentAvailability(null);
         setIsProfileLoaded(true);
+        setIsTimetableLoaded(true);
         return;
       }
 
-      setUser(firebaseUser);
-      setEmailVerified(Boolean(firebaseUser.emailVerified));
-      setIsAuthReady(true);
-
       setIsProfileLoaded(false);
+      setIsTimetableLoaded(false);
+
       void (async () => {
-        if (firebaseUser.emailVerified) {
+        let resolvedUser = firebaseUser;
+
+        if (!resolvedUser.emailVerified) {
           try {
-            const tokenResult = await firebaseUser.getIdTokenResult();
-            if (!tokenResult.claims.email_verified) {
-              await firebaseUser.getIdToken(true);
-            }
+            resolvedUser = await reloadStudentUser(resolvedUser);
           } catch {
-            // Continue subscribing even if token refresh fails transiently
+            // Keep existing Firebase user object if reload fails transiently
           }
         }
-        if (!active || auth.currentUser?.uid !== firebaseUser.uid) return;
+
+        if (!active || auth.currentUser?.uid !== resolvedUser.uid) return;
+
+        setUser(resolvedUser);
+        setEmailVerified(Boolean(resolvedUser.emailVerified));
+        setIsAuthReady(true);
+
+        if (!resolvedUser.emailVerified) {
+          setStudentProfile(null);
+          setStudentTimetable(null);
+          setStudentAvailability(null);
+          setIsProfileLoaded(true);
+          setIsTimetableLoaded(true);
+          return;
+        }
+
+        try {
+          const tokenResult = await resolvedUser.getIdTokenResult();
+          if (!tokenResult.claims.email_verified) {
+            await resolvedUser.getIdToken(true);
+          }
+        } catch {
+          // Continue subscribing even if token refresh fails transiently
+        }
+
+        if (!active || auth.currentUser?.uid !== resolvedUser.uid) return;
+
         unsubscribeProfile = subscribeToStudentProfile(
-          firebaseUser.uid,
+          resolvedUser.uid,
           (profileDoc) => {
             if (!active) return;
             setStudentProfile(profileDoc);
@@ -164,75 +174,103 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsProfileLoaded(true);
           }
         );
+
+        unsubscribeTimetable = subscribeToStudentTimetable(
+          resolvedUser.uid,
+          (timetableDoc) => {
+            if (!active) return;
+            setStudentTimetable(timetableDoc);
+            setIsTimetableLoaded(true);
+          },
+          (err) => {
+            if (!active) return;
+            setAuthError(err.message);
+            setIsTimetableLoaded(true);
+          }
+        );
+
+        unsubscribeAvailability = subscribeToStudentAvailability(
+          resolvedUser.uid,
+          (availabilityDoc) => {
+            if (!active) return;
+            setStudentAvailability(availabilityDoc);
+          }
+        );
       })();
     });
 
     return () => {
       active = false;
       unsubscribeAuth();
-      if (unsubscribeProfile) {
-        unsubscribeProfile();
-      }
+      cleanupListeners();
     };
   }, []);
 
-  const resolveDestinationPath = useCallback(
-    (intendedPath?: string, overrideState?: AuthStateStatus): string => {
-      const targetState =
-        overrideState ??
-        deriveAuthState(isAuthReady, user, emailVerified, isProfileLoaded, studentProfile);
+  const isStudentDataLoaded = isProfileLoaded && isTimetableLoaded;
 
-      switch (targetState) {
-        case 'unauthenticated':
-          return '/welcome';
-        case 'unverified_email':
-          return '/verify-email';
-        case 'needs_membership_request':
-          return IS_TIMETABLE_TESTING_MODE ? '/timetable' : '/membership-request';
-        case 'pending':
-          return IS_TIMETABLE_TESTING_MODE ? '/timetable' : '/pending-approval';
-        case 'rejected':
-          return IS_TIMETABLE_TESTING_MODE ? '/timetable' : '/membership-rejected';
-        case 'approved': {
-          if (intendedPath && !PUBLIC_OR_STATUS_PATHS.has(intendedPath.split('?')[0])) {
-            return intendedPath;
-          }
-          return IS_TIMETABLE_TESTING_MODE ? '/timetable' : '/discover';
-        }
-        case 'loading':
-        default:
-          return '/welcome';
-      }
-    },
-    [isAuthReady, user, emailVerified, isProfileLoaded, studentProfile]
+  const authState = useMemo(
+    () =>
+      deriveAuthState({
+        isAuthReady,
+        hasUser: Boolean(user),
+        emailVerified,
+        isStudentDataLoaded,
+        profile: studentProfile,
+        timetable: studentTimetable,
+      }),
+    [isAuthReady, user, emailVerified, isStudentDataLoaded, studentProfile, studentTimetable]
   );
 
-  const resolveStateForUser = useCallback(async (firebaseUser: User): Promise<AuthStateStatus> => {
-    await firebaseUser.reload();
-    const freshUser = auth.currentUser || firebaseUser;
-    setUser(freshUser);
-    setEmailVerified(freshUser.emailVerified);
+  const hasCompletedTimetable = useMemo(
+    () => hasSubmittedStudentTimetable(studentProfile, studentTimetable),
+    [studentProfile, studentTimetable]
+  );
 
-    if (!freshUser.emailVerified) {
-      setStudentProfile(null);
-      setIsProfileLoaded(true);
-      return 'unverified_email';
-    }
+  const resolveDestinationPath = useCallback(
+    (intendedPath?: string, overrideState?: AuthStateStatus): string => {
+      const targetState = overrideState ?? authState;
+      return resolveDestinationForState(targetState, intendedPath);
+    },
+    [authState]
+  );
 
-    const tokenResult = await freshUser.getIdTokenResult();
-    if (!tokenResult.claims.email_verified) {
-      await freshUser.getIdToken(true);
-    }
-
-    const profileDoc = await getStudentProfile(freshUser.uid);
+  const loadStudentDocs = useCallback(async (uid: string) => {
+    const [profileDoc, timetableDoc, availabilityDoc] = await Promise.all([
+      getStudentProfile(uid),
+      getStudentTimetable(uid),
+      getStudentAvailability(uid),
+    ]);
     setStudentProfile(profileDoc);
+    setStudentTimetable(timetableDoc);
+    setStudentAvailability(availabilityDoc);
     setIsProfileLoaded(true);
-
-    if (!profileDoc) {
-      return 'needs_membership_request';
-    }
-    return profileDoc.membershipStatus;
+    setIsTimetableLoaded(true);
+    return { profileDoc, timetableDoc, availabilityDoc };
   }, []);
+
+  const resolveStateForUser = useCallback(
+    async (firebaseUser: User): Promise<AuthStateStatus> => {
+      const freshUser = await reloadStudentUser(firebaseUser);
+      setUser(freshUser);
+      setEmailVerified(freshUser.emailVerified);
+      setIsAuthReady(true);
+
+      if (!freshUser.emailVerified) {
+        setStudentProfile(null);
+        setStudentTimetable(null);
+        setStudentAvailability(null);
+        setIsProfileLoaded(true);
+        setIsTimetableLoaded(true);
+        return 'unverified_email';
+      }
+
+      const { profileDoc, timetableDoc } = await loadStudentDocs(freshUser.uid);
+      return hasSubmittedStudentTimetable(profileDoc, timetableDoc)
+        ? 'ready'
+        : 'needs_timetable';
+    },
+    [loadStudentDocs]
+  );
 
   const signup = useCallback(async (input: SignupInput): Promise<User> => {
     setAuthError(null);
@@ -241,8 +279,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const createdUser = await registerStudentAccount(input);
       setUser(createdUser);
       setEmailVerified(createdUser.emailVerified);
+      setIsAuthReady(true);
       setStudentProfile(null);
+      setStudentTimetable(null);
+      setStudentAvailability(null);
       setIsProfileLoaded(true);
+      setIsTimetableLoaded(true);
       return createdUser;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Registration failed.';
@@ -287,66 +329,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const reloaded = await reloadStudentUser(targetUser);
     setUser(reloaded);
     setEmailVerified(reloaded.emailVerified);
+    setIsAuthReady(true);
     if (reloaded.emailVerified) {
-      const profileDoc = await getStudentProfile(reloaded.uid);
-      setStudentProfile(profileDoc);
-      setIsProfileLoaded(true);
+      try {
+        await loadStudentDocs(reloaded.uid);
+      } catch {
+        setIsProfileLoaded(true);
+        setIsTimetableLoaded(true);
+      }
     }
     return reloaded.emailVerified;
-  }, [user]);
+  }, [user, loadStudentDocs]);
+
+  const refreshStudentData = useCallback(async (): Promise<void> => {
+    const targetUser = auth.currentUser || user;
+    if (!targetUser || !targetUser.emailVerified) return;
+    await loadStudentDocs(targetUser.uid);
+  }, [user, loadStudentDocs]);
 
   const sendPasswordReset = useCallback(async (email: string): Promise<void> => {
     setAuthError(null);
     await sendStudentPasswordReset(email);
   }, []);
 
-  const submitMembershipRequest = useCallback(
-    async (input: MembershipRequestInput): Promise<StudentProfileDoc> => {
-      setAuthError(null);
-      setIsBusy(true);
-      try {
-        const created = await submitStudentMembershipRequest(input);
-        setStudentProfile(created);
-        setIsProfileLoaded(true);
-        return created;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unable to submit membership request.';
-        setAuthError(msg);
-        throw err;
-      } finally {
-        setIsBusy(false);
-      }
-    },
-    []
-  );
-
-  const refreshMembership = useCallback(async (): Promise<StudentProfileDoc | null> => {
-    const targetUser = auth.currentUser || user;
-    if (!targetUser) return null;
-    try {
-      const latest = await getStudentProfile(targetUser.uid);
-      setStudentProfile(latest);
-      setIsProfileLoaded(true);
-      return latest;
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Unable to refresh membership status.');
-      return null;
-    }
-  }, [user]);
-
   const signOut = useCallback(async (): Promise<void> => {
     await signOutStudentAccount();
     setUser(null);
     setEmailVerified(false);
     setStudentProfile(null);
+    setStudentTimetable(null);
+    setStudentAvailability(null);
     setIsProfileLoaded(true);
+    setIsTimetableLoaded(true);
     setAuthError(null);
   }, []);
-
-  const authState = useMemo(
-    () => deriveAuthState(isAuthReady, user, emailVerified, isProfileLoaded, studentProfile),
-    [isAuthReady, user, emailVerified, isProfileLoaded, studentProfile]
-  );
 
   const studentData: DerivedStudentData = useMemo(() => {
     const draft = user ? getSignupDraft(user.uid) : null;
@@ -360,8 +376,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'IDEA Lab Student',
       email: studentProfile?.email || user?.email || '',
       rollNumber: studentProfile?.registrationNumber || draft?.registrationNumber || '',
-      department: studentProfile?.department || 'AI & Data Science',
-      year: studentProfile?.academicYear || '3rd Year',
+      department:
+        studentProfile?.department ||
+        studentTimetable?.department ||
+        'AI & Data Science',
+      year:
+        studentProfile?.currentAcademicYear ||
+        studentProfile?.academicYear ||
+        studentTimetable?.academicYear ||
+        '3rd Year',
+      semester:
+        studentProfile?.currentSemester ||
+        studentTimetable?.semester ||
+        'Semester 5',
       submittedDate: studentProfile?.createdAt?.toDate
         ? studentProfile.createdAt.toDate().toLocaleDateString('en-US', {
             month: 'short',
@@ -370,13 +397,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })
         : undefined,
     };
-  }, [studentProfile, user]);
+  }, [studentProfile, studentTimetable, user]);
 
   return (
     <AuthContext.Provider
       value={{
         user,
         studentProfile,
+        studentTimetable,
+        studentAvailability,
+        hasCompletedTimetable,
         authState,
         isAuthReady,
         isBusy,
@@ -387,8 +417,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resendVerificationEmail,
         refreshVerificationStatus,
         sendPasswordReset,
-        submitMembershipRequest,
-        refreshMembership,
+        refreshStudentData,
         signOut,
         resolveDestinationPath,
         studentData,

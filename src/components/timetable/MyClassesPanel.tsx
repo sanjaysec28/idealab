@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pencil, Trash2, BookOpen, RotateCcw } from 'lucide-react';
+import { Pencil, Trash2, BookOpen } from 'lucide-react';
 import { TimetableClassEntry } from '../../types/timetable';
 import { formatClassScheduleSummary } from '../../utils/timetableCalculations';
 
@@ -8,7 +8,6 @@ interface MyClassesPanelProps {
   editingClassId: string | null;
   onEditClass: (entry: TimetableClassEntry) => void;
   onDeleteClass: (classId: string) => void;
-  onRestoreDemo: () => void;
 }
 
 export const MyClassesPanel: React.FC<MyClassesPanelProps> = ({
@@ -16,7 +15,6 @@ export const MyClassesPanel: React.FC<MyClassesPanelProps> = ({
   editingClassId,
   onEditClass,
   onDeleteClass,
-  onRestoreDemo,
 }) => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -42,14 +40,6 @@ export const MyClassesPanel: React.FC<MyClassesPanelProps> = ({
               Add a subject on the left panel to build your schedule.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onRestoreDemo}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF8F5] hover:bg-[#F5F1EC] border border-[#EAE6E1] text-[11px] font-semibold text-[#202124] cursor-pointer"
-          >
-            <RotateCcw className="w-3 h-3 text-[#E63946]" />
-            <span>Load Sample Timetable</span>
-          </button>
         </div>
       ) : (
         <div className="mt-3.5 space-y-2.5 max-h-[300px] overflow-y-auto pr-0.5">

@@ -2,7 +2,7 @@
   "entities": {
     "StudentProfile": {
       "title": "StudentProfile",
-      "description": "IDEA LAB student identity, academic details, and coordinator-controlled membership status.",
+      "description": "IDEA LAB student identity, academic details, and timetable onboarding status.",
       "type": "object",
       "properties": {
         "uid": {
@@ -31,7 +31,7 @@
           "minLength": 4,
           "maxLength": 32,
           "pattern": "^[A-Za-z0-9\\-]+$",
-          "description": "Student college registration number."
+          "description": "Optional college registration number."
         },
         "department": {
           "type": "string",
@@ -45,52 +45,225 @@
           "maxLength": 24,
           "description": "Current academic year (e.g., 3rd Year)."
         },
+        "currentAcademicYear": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 24,
+          "description": "Academic year displayed on profile & timetable."
+        },
+        "currentSemester": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "description": "Current semester label (e.g., Semester 5)."
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional profile photo URL."
+        },
+        "timetableCompleted": {
+          "type": "boolean",
+          "description": "True once the student has submitted a valid timetable in Firestore."
+        },
+        "timetableStatus": {
+          "type": "string",
+          "enum": ["not_submitted", "submitted"],
+          "description": "Current student timetable completion state."
+        },
+        "timetableUpdatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the timetable was last submitted."
+        },
+        "profileSetupCompleted": {
+          "type": "boolean",
+          "description": "True once initial academic profile & timetable setup are saved."
+        },
         "membershipStatus": {
           "type": "string",
           "enum": ["pending", "approved", "rejected"],
-          "description": "Coordinator-controlled membership approval state."
+          "description": "Optional legacy field preserved read-only for existing accounts."
         },
         "createdAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp when the membership request was submitted."
+          "description": "Server timestamp when the student profile was created."
         },
         "updatedAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp of the last update."
-        },
-        "approvedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp when approved by a coordinator."
-        },
-        "approvedBy": {
+          "description": "Server timestamp of the last profile update."
+        }
+      },
+      "required": ["uid", "fullName", "email", "createdAt"]
+    },
+    "StudentTimetable": {
+      "title": "StudentTimetable",
+      "description": "Canonical submitted weekly class timetable for an authenticated student.",
+      "type": "object",
+      "properties": {
+        "uid": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "description": "UID or identifier of the approving coordinator."
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
-        "rejectionReason": {
+        "semester": {
           "type": "string",
-          "maxLength": 500,
-          "description": "Optional note explaining membership rejection."
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "academicYear": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 24
+        },
+        "department": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "classes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24
+        },
+        "selectedWeekdays": {
+          "type": "array",
+          "maxItems": 6
+        },
+        "selectedTimeSlots": {
+          "type": "array",
+          "maxItems": 4
+        },
+        "subjectCodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24
+        },
+        "subjectNames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24
+        },
+        "facultyNames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24
+        },
+        "totalSubjects": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        },
+        "classDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "totalClasses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        },
+        "submissionStatus": {
+          "type": "string",
+          "enum": ["submitted"]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
         }
       },
       "required": [
         "uid",
-        "fullName",
-        "email",
-        "registrationNumber",
-        "department",
+        "semester",
         "academicYear",
-        "membershipStatus",
-        "createdAt"
+        "department",
+        "classes",
+        "selectedWeekdays",
+        "selectedTimeSlots",
+        "subjectCodes",
+        "subjectNames",
+        "facultyNames",
+        "totalSubjects",
+        "classDays",
+        "totalClasses",
+        "submissionStatus",
+        "version",
+        "submittedAt",
+        "updatedAt"
+      ]
+    },
+    "StudentAvailability": {
+      "title": "StudentAvailability",
+      "description": "Derived weekly free slots and opt-in collaboration availability for a student.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "freeSlots": {
+          "type": "array",
+          "maxItems": 24
+        },
+        "totalFreePeriods": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "totalOccupiedPeriods": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "utilizationPercentage": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "isOptedIn": {
+          "type": "boolean"
+        },
+        "hasSubmittedTimetable": {
+          "type": "boolean"
+        },
+        "timetableVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "freeSlots",
+        "totalFreePeriods",
+        "totalOccupiedPeriods",
+        "utilizationPercentage",
+        "isOptedIn",
+        "hasSubmittedTimetable",
+        "timetableVersion",
+        "updatedAt"
       ]
     },
     "AdminRecord": {
       "title": "AdminRecord",
-      "description": "Authorized IDEA LAB coordinator/admin account marker.",
+      "description": "Authorized IDEA LAB admin account marker.",
       "type": "object",
       "properties": {
         "uid": {
@@ -115,11 +288,19 @@
   "firestore": {
     "/students/{uid}": {
       "schema": { "$ref": "#/entities/StudentProfile" },
-      "description": "Student membership profiles keyed by Firebase Auth UID."
+      "description": "Student profile and timetable completion records keyed by Firebase Auth UID."
+    },
+    "/students/{uid}/timetable/{docId}": {
+      "schema": { "$ref": "#/entities/StudentTimetable" },
+      "description": "Submitted student timetable stored under docId 'current'."
+    },
+    "/students/{uid}/availability/{docId}": {
+      "schema": { "$ref": "#/entities/StudentAvailability" },
+      "description": "Derived student free-period availability and collaboration opt-in state under docId 'current'."
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/AdminRecord" },
-      "description": "Authorized IDEA LAB admin/coordinator accounts (managed via backend/console)."
+      "description": "Authorized IDEA LAB admin accounts (managed via backend/console)."
     }
   }
 }
