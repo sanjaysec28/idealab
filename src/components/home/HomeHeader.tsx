@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { SafeMediaImage } from './SafeMediaImage';
 import { IdeaLabLogo } from '../shared/IdeaLabLogo';
+import { resolveProfileAvatarUrl } from '../../utils/assets';
 
 interface NavItem {
   label: string;
@@ -44,11 +45,18 @@ function getInitials(name: string): string {
 
 export const HomeHeader: React.FC = () => {
   const navigate = useNavigate();
-  const { user, studentProfile, studentData, signOut } = useAuth();
+  const {
+    user,
+    studentProfile,
+    studentAvailability,
+    hasCompletedTimetable,
+    studentData,
+    signOut,
+  } = useAuth();
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [hasUnreadNotifs, setHasUnreadNotifs] = useState(true);
+  const [dismissedNotifs, setDismissedNotifs] = useState(false);
 
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -59,6 +67,29 @@ export const HomeHeader: React.FC = () => {
   const displayYear =
     studentProfile?.currentAcademicYear || studentProfile?.academicYear || studentData.year;
   const subtitle = `${displayDept} • ${displayYear}`;
+  const resolvedAvatarUrl = resolveProfileAvatarUrl({
+    photoURL: studentProfile?.photoURL || user?.photoURL,
+    avatarPresetId: studentProfile?.avatarPresetId,
+  });
+
+  const realNotifications: { id: string; title: string; message: string; to: string }[] = [];
+  if (!hasCompletedTimetable) {
+    realNotifications.push({
+      id: 'notif-timetable',
+      title: 'Complete Your Semester Timetable',
+      message: 'Submit your class timetable to calculate your free slots for IDEA LAB collaboration.',
+      to: '/timetable',
+    });
+  } else if (!studentAvailability?.isOptedIn) {
+    realNotifications.push({
+      id: 'notif-availability',
+      title: 'Collaboration Availability is Off',
+      message: 'Turn on Smart Availability when you want verified peers to see your free periods.',
+      to: '/home',
+    });
+  }
+
+  const hasUnreadNotifs = !dismissedNotifs && realNotifications.length > 0;
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -119,7 +150,7 @@ export const HomeHeader: React.FC = () => {
               onClick={() => {
                 setShowNotifications((prev) => !prev);
                 setShowProfileMenu(false);
-                setHasUnreadNotifs(false);
+                setDismissedNotifs(true);
               }}
               aria-label="Open notifications"
               aria-expanded={showNotifications}
@@ -134,25 +165,33 @@ export const HomeHeader: React.FC = () => {
             {showNotifications && (
               <div className="absolute right-0 mt-2 w-76 sm:w-80 bg-white rounded-2xl shadow-xl border border-[#EAE6E1] p-4 z-50 space-y-3">
                 <div className="flex items-center justify-between border-b border-[#EAE6E1] pb-2.5">
-                  <span className="text-xs font-bold text-[#202124]">Campus Notifications</span>
-                  <span className="text-[10px] font-semibold text-[#E63946] bg-[#FFF0F1] px-2 py-0.5 rounded-full">
-                    Demo Updates
+                  <span className="text-xs font-bold text-[#202124]">Notifications</span>
+                  <span className="text-[11px] font-medium text-[#777777]">
+                    {realNotifications.length === 0 ? 'All caught up' : `${realNotifications.length} update`}
                   </span>
                 </div>
-                <div className="space-y-2 text-xs">
-                  <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#EAE6E1]">
-                    <p className="font-semibold text-[#202124]">AI Innovation Workshop</p>
+                {realNotifications.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-[#FAF8F5] border border-[#EAE6E1] text-center">
+                    <p className="text-xs font-semibold text-[#202124]">No new notifications</p>
                     <p className="text-[11px] text-[#777777] mt-0.5">
-                      Scheduled for Jan 18 · 10:00 AM at IDEA LAB.
+                      Real campus updates and collaboration notices will appear here.
                     </p>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#EAE6E1]">
-                    <p className="font-semibold text-[#202124]">Smart Availability Opt-In</p>
-                    <p className="text-[11px] text-[#777777] mt-0.5">
-                      Submit your timetable and toggle availability when you want teammates to find your free slots.
-                    </p>
+                ) : (
+                  <div className="space-y-2 text-xs">
+                    {realNotifications.map((notif) => (
+                      <Link
+                        key={notif.id}
+                        to={notif.to}
+                        onClick={() => setShowNotifications(false)}
+                        className="block p-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#F3EFE9] border border-[#EAE6E1] transition-colors"
+                      >
+                        <p className="font-semibold text-[#202124]">{notif.title}</p>
+                        <p className="text-[11px] text-[#777777] mt-0.5">{notif.message}</p>
+                      </Link>
+                    ))}
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>
@@ -169,9 +208,9 @@ export const HomeHeader: React.FC = () => {
               aria-label="Student account menu"
               className="flex items-center gap-2 sm:gap-2.5 pl-1.5 pr-2.5 sm:pr-3 py-1 rounded-2xl bg-[#FAF8F5] hover:bg-[#F3EFE9] border border-[#EAE6E1] transition-colors cursor-pointer"
             >
-              {user?.photoURL ? (
+              {resolvedAvatarUrl ? (
                 <SafeMediaImage
-                  src={user.photoURL}
+                  src={resolvedAvatarUrl}
                   alt={displayName}
                   variant="avatar"
                   fallbackInitials={getInitials(displayName)}

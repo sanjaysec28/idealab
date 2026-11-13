@@ -1,6 +1,7 @@
 import { FirebaseOptions, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import appletFirebaseConfig from '../../firebase-applet-config.json';
 
 const EXPECTED_PROJECT_ID = 'devarena-ba727';
@@ -39,6 +40,7 @@ export const app = initializeApp(resolvedConfig);
 
 export const db = getFirestore(app, FIRESTORE_DATABASE_ID);
 export const auth = getAuth(app);
+export const storage = getStorage(app);
 
 export async function verifyFirestoreConnection(): Promise<boolean> {
   try {

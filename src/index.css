@@ -41,6 +41,32 @@
   }
 }
 
+@keyframes idea-hanging-swing {
+  0% {
+    transform: rotate(-3.8deg);
+  }
+  50% {
+    transform: rotate(3.8deg);
+  }
+  100% {
+    transform: rotate(-3.8deg);
+  }
+}
+
+.idea-hanging-sign {
+  transform-origin: top center;
+  animation: idea-hanging-swing 5.2s ease-in-out infinite;
+  animation-delay: -1.3s;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idea-hanging-sign {
+    animation: none;
+    transform: rotate(0deg);
+  }
+}
+
 /* Seamless feathered blending for WelcomePage hero illustration */
 .welcome-hero-mask {
   -webkit-mask-image: linear-gradient(

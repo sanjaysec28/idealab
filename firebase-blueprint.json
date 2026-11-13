@@ -59,8 +59,52 @@
         },
         "photoURL": {
           "type": "string",
-          "maxLength": 500,
-          "description": "Optional profile photo URL."
+          "maxLength": 1000,
+          "description": "Optional profile photo URL in Firebase Storage or default asset."
+        },
+        "avatarPresetId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Identifier of selected default avatar preset."
+        },
+        "bannerURL": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Optional cover banner URL in Firebase Storage or default asset."
+        },
+        "bannerPresetId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Identifier of selected default cover banner preset."
+        },
+        "bio": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "Short student biography."
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Student campus or city location."
+        },
+        "phoneNumber": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Optional student contact phone number."
+        },
+        "skills": {
+          "type": "array",
+          "maxItems": 25,
+          "description": "Technical and creative skill tags."
+        },
+        "interests": {
+          "type": "array",
+          "maxItems": 25,
+          "description": "Innovation and research interest tags."
+        },
+        "socialLinks": {
+          "type": "object",
+          "description": "Validated LinkedIn, GitHub, and portfolio URLs."
         },
         "timetableCompleted": {
           "type": "boolean",
@@ -244,6 +288,36 @@
           "type": "integer",
           "minimum": 1
         },
+        "fullName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "department": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "academicYear": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 24
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "avatarPresetId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "skills": {
+          "type": "array",
+          "maxItems": 25
+        },
+        "emailVerified": {
+          "type": "boolean"
+        },
         "updatedAt": {
           "type": "string",
           "format": "date-time"
@@ -260,6 +334,113 @@
         "timetableVersion",
         "updatedAt"
       ]
+    },
+    "CampusProject": {
+      "title": "CampusProject",
+      "description": "Published student innovation project in IDEA LAB.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "tagline": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "minLength": 4, "maxLength": 2000 },
+        "category": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "coverImage": { "type": "string", "maxLength": 1000 },
+        "tags": { "type": "array", "maxItems": 12 },
+        "creatorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "creatorName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "creatorAvatar": { "type": "string", "maxLength": 1000 },
+        "teamMembers": { "type": "array", "maxItems": 10 },
+        "likesCount": { "type": "integer", "minimum": 0 },
+        "status": { "type": "string", "enum": ["draft", "published", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "description", "category", "creatorUid", "creatorName", "likesCount", "status", "createdAt", "updatedAt"]
+    },
+    "CommunityPost": {
+      "title": "CommunityPost",
+      "description": "Published student post in the IDEA LAB community feed.",
+      "type": "object",
+      "properties": {
+        "authorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "authorDepartment": { "type": "string", "maxLength": 80 },
+        "authorYear": { "type": "string", "maxLength": 24 },
+        "authorAvatar": { "type": "string", "maxLength": 1000 },
+        "authorAvatarPresetId": { "type": "string", "maxLength": 64 },
+        "category": { "type": "string", "enum": ["Projects", "Ideas", "Team Up", "Updates"] },
+        "content": { "type": "string", "minLength": 2, "maxLength": 1200 },
+        "hashtags": { "type": "array", "maxItems": 8 },
+        "likesCount": { "type": "integer", "minimum": 0 },
+        "commentsCount": { "type": "integer", "minimum": 0 },
+        "status": { "type": "string", "enum": ["published", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "authorName", "category", "content", "likesCount", "commentsCount", "status", "createdAt", "updatedAt"]
+    },
+    "CommunityPostLike": {
+      "title": "CommunityPostLike",
+      "description": "Like marker keyed by student UID on a community post.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "createdAt"]
+    },
+    "CommunityPostComment": {
+      "title": "CommunityPostComment",
+      "description": "Comment reply on a published community post.",
+      "type": "object",
+      "properties": {
+        "authorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "authorAvatar": { "type": "string", "maxLength": 1000 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "authorName", "content", "createdAt"]
+    },
+    "CampusEvent": {
+      "title": "CampusEvent",
+      "description": "Coordinator-published IDEA LAB workshop, hackathon, or demo day event.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "eventDate": { "type": "string", "format": "date-time" },
+        "timeRange": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "location": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "category": { "type": "string", "maxLength": 40 },
+        "thumbnail": { "type": "string", "maxLength": 1000 },
+        "capacity": { "type": "integer", "minimum": 1 },
+        "registeredCount": { "type": "integer", "minimum": 0 },
+        "status": { "type": "string", "enum": ["draft", "published", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "eventDate", "timeRange", "location", "status", "createdAt", "updatedAt"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Coordinator-approved contribution points and standing for a student.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "department": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "academicYear": { "type": "string", "maxLength": 24 },
+        "photoURL": { "type": "string", "maxLength": 1000 },
+        "avatarPresetId": { "type": "string", "maxLength": 64 },
+        "approvedPoints": { "type": "integer", "minimum": 0 },
+        "projectsCompleted": { "type": "integer", "minimum": 0 },
+        "badge": { "type": "string", "maxLength": 60 },
+        "status": { "type": "string", "enum": ["active", "hidden"] },
+        "awardedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "department", "approvedPoints", "status", "updatedAt"]
     },
     "AdminRecord": {
       "title": "AdminRecord",
@@ -297,6 +478,30 @@
     "/students/{uid}/availability/{docId}": {
       "schema": { "$ref": "#/entities/StudentAvailability" },
       "description": "Derived student free-period availability and collaboration opt-in state under docId 'current'."
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/CampusProject" },
+      "description": "Published student projects displayed on the IDEA LAB homepage and projects hub."
+    },
+    "/communityPosts/{postId}": {
+      "schema": { "$ref": "#/entities/CommunityPost" },
+      "description": "Published student community posts displayed in the IDEA LAB community feed."
+    },
+    "/communityPosts/{postId}/likes/{uid}": {
+      "schema": { "$ref": "#/entities/CommunityPostLike" },
+      "description": "Per-student like record for community posts."
+    },
+    "/communityPosts/{postId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/CommunityPostComment" },
+      "description": "Student comments on community posts."
+    },
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/CampusEvent" },
+      "description": "Coordinator-published upcoming IDEA LAB workshops and hackathons."
+    },
+    "/leaderboard/{uid}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Coordinator-approved contribution points and rankings (strictly read-only for students)."
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/AdminRecord" },

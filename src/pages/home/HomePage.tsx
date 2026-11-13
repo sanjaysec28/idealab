@@ -1,6 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { updateCollaborationAvailabilityOptIn } from '../../services/timetableService';
+import {
+  subscribeToOptedInAvailability,
+  syncAvailabilityPublicProfile,
+  updateCollaborationAvailabilityOptIn,
+} from '../../services/timetableService';
+import { StudentAvailabilityDoc } from '../../types/timetable';
 import {
   calculateTimetableSummary,
   getTodayFreeSlots,
@@ -22,6 +27,7 @@ import { UpcomingEvents } from '../../components/home/UpcomingEvents';
 export const HomePage: React.FC = () => {
   const {
     user,
+    studentProfile,
     studentTimetable,
     studentAvailability,
     refreshStudentData,
@@ -32,6 +38,11 @@ export const HomePage: React.FC = () => {
   const [isSavingOptIn, setIsSavingOptIn] = useState(false);
   const [optInError, setOptInError] = useState<string | null>(null);
 
+  const [availablePeers, setAvailablePeers] = useState<StudentAvailabilityDoc[]>([]);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState<boolean>(true);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const hasSyncedPublicProfileRef = useRef(false);
+
   const [discoveryModal, setDiscoveryModal] = useState<{
     isOpen: boolean;
     tab: 'students' | 'common-slot';
@@ -40,7 +51,71 @@ export const HomePage: React.FC = () => {
   useEffect(() => {
     setOptimisticOptIn(null);
     setOptInError(null);
+    hasSyncedPublicProfileRef.current = false;
   }, [studentAvailability?.isOptedIn, uid]);
+
+  const publicProfile = useMemo(
+    () => ({
+      fullName: studentProfile?.fullName || user?.displayName || undefined,
+      department: studentProfile?.department,
+      academicYear: studentProfile?.currentAcademicYear || studentProfile?.academicYear,
+      photoURL: studentProfile?.photoURL || user?.photoURL || undefined,
+      avatarPresetId: studentProfile?.avatarPresetId,
+      skills: studentProfile?.skills,
+    }),
+    [studentProfile, user?.displayName, user?.photoURL]
+  );
+
+  useEffect(() => {
+    if (!uid || !user?.emailVerified) {
+      setAvailablePeers([]);
+      setIsLoadingAvailability(false);
+      setAvailabilityError(null);
+      return;
+    }
+
+    setIsLoadingAvailability(true);
+    setAvailabilityError(null);
+
+    const unsubscribe = subscribeToOptedInAvailability(
+      uid,
+      (peers) => {
+        setAvailablePeers(peers);
+        setIsLoadingAvailability(false);
+      },
+      (err) => {
+        setAvailabilityError(err.message || 'Unable to load available students.');
+        setIsLoadingAvailability(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [uid, user?.emailVerified]);
+
+  useEffect(() => {
+    if (
+      !uid ||
+      !user?.emailVerified ||
+      hasSyncedPublicProfileRef.current ||
+      !studentAvailability?.hasSubmittedTimetable ||
+      studentAvailability.fullName ||
+      !studentProfile
+    ) {
+      return;
+    }
+
+    hasSyncedPublicProfileRef.current = true;
+    void syncAvailabilityPublicProfile(uid, publicProfile).catch(() => {
+      // Non-fatal metadata backfill
+    });
+  }, [
+    publicProfile,
+    studentAvailability?.fullName,
+    studentAvailability?.hasSubmittedTimetable,
+    studentProfile,
+    uid,
+    user?.emailVerified,
+  ]);
 
   const classes = studentTimetable?.classes ?? [];
 
@@ -75,13 +150,47 @@ export const HomePage: React.FC = () => {
       ? optimisticOptIn
       : Boolean(studentAvailability?.isOptedIn);
 
+  const todayCommonSlotsCount = useMemo(() => {
+    if (
+      !hasValidTimetable ||
+      todaySlotsInfo.isSunday ||
+      !todaySlotsInfo.weekday ||
+      todaySlotsInfo.freeSlots.length === 0 ||
+      availablePeers.length === 0
+    ) {
+      return 0;
+    }
+
+    const targetDayId = todaySlotsInfo.weekday.id;
+    let count = 0;
+
+    for (const mySlot of todaySlotsInfo.freeSlots) {
+      const hasPeerWithSameSlot = availablePeers.some((peer) =>
+        peer.freeSlots.some(
+          (peerSlot) => peerSlot.day === targetDayId && peerSlot.slotId === mySlot.id
+        )
+      );
+      if (hasPeerWithSameSlot) {
+        count += 1;
+      }
+    }
+
+    return count;
+  }, [
+    availablePeers,
+    hasValidTimetable,
+    todaySlotsInfo.freeSlots,
+    todaySlotsInfo.isSunday,
+    todaySlotsInfo.weekday,
+  ]);
+
   const handleToggleAvailability = async (nextValue: boolean) => {
     if (!uid || !hasValidTimetable || isSavingOptIn) return;
     setOptInError(null);
     setOptimisticOptIn(nextValue);
     setIsSavingOptIn(true);
     try {
-      await updateCollaborationAvailabilityOptIn(uid, nextValue);
+      await updateCollaborationAvailabilityOptIn(uid, nextValue, publicProfile);
       await refreshStudentData();
       setOptimisticOptIn(null);
     } catch (err) {
@@ -96,23 +205,21 @@ export const HomePage: React.FC = () => {
     }
   };
 
-  const isUserIncludedInDiscovery =
-    Boolean(user?.emailVerified) && isOptedIn && hasValidTimetable && hasFreePeriods;
-
-  // Live opted-in count for verified real state (demo peer preview remains clearly marked inside the modal)
-  const liveAvailableStudentsCount = isUserIncludedInDiscovery ? 1 : 0;
+  const liveAvailableStudentsCount = availablePeers.length;
 
   return (
     <div className="min-h-[100dvh] bg-[#FAF8F5] text-[#202124] flex flex-col">
       <HomeHeader />
 
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-28 lg:pb-8">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-24 lg:pb-8">
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,74fr)_minmax(290px,26fr)] gap-5 items-start">
           {/* LEFT / MAIN AREA (~74%) */}
           <div className="space-y-5 min-w-0">
             <SmartAvailabilityHero
               availableStudentsCount={liveAvailableStudentsCount}
               yourFreePeriodsCount={todaySlotsInfo.freeSlots.length}
+              commonSlotsCount={todayCommonSlotsCount}
+              isLoadingAvailability={isLoadingAvailability}
               hasValidTimetable={hasValidTimetable}
               onExploreAvailableStudents={() =>
                 setDiscoveryModal({ isOpen: true, tab: 'students' })
@@ -180,7 +287,12 @@ export const HomePage: React.FC = () => {
         isOpen={discoveryModal.isOpen}
         initialTab={discoveryModal.tab}
         hasValidTimetable={hasValidTimetable}
+        todayWeekday={todaySlotsInfo.weekday}
+        isSunday={todaySlotsInfo.isSunday}
         todayFreeSlots={todaySlotsInfo.freeSlots}
+        availablePeers={availablePeers}
+        isLoading={isLoadingAvailability}
+        error={availabilityError}
         onClose={() => setDiscoveryModal((prev) => ({ ...prev, isOpen: false }))}
       />
     </div>

@@ -1,29 +1,98 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Users } from 'lucide-react';
+import { AlertCircle, Users } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import {
   COMMUNITY_FEED_FILTERS,
   CommunityFeedCategory,
-  HOME_DEMO_POSTS,
-} from '../../data/homeDemoData';
+  fetchUserLikedPostIds,
+  PublishedCommunityPost,
+  subscribeToPublishedCommunityPosts,
+  toggleCommunityPostLike,
+} from '../../services/homeDataService';
+import { resolveProfileAvatarUrl } from '../../utils/assets';
 import { CommunityPostCard } from './CommunityPostCard';
 
 export const CommunityFeed: React.FC = () => {
+  const { user, studentProfile, studentData } = useAuth();
+  const uid = user?.uid || '';
+  const currentUserName = studentProfile?.fullName || user?.displayName || studentData.name;
+  const currentUserAvatar =
+    resolveProfileAvatarUrl({
+      photoURL: studentProfile?.photoURL || user?.photoURL,
+      avatarPresetId: studentProfile?.avatarPresetId,
+    }) || '';
+
   const [selectedFilter, setSelectedFilter] = useState<CommunityFeedCategory>('All Posts');
-  const [likedPostIds, setLikedPostIds] = useState<string[]>([]);
+  const [posts, setPosts] = useState<PublishedCommunityPost[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+  const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const [bookmarkedPostIds, setBookmarkedPostIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setError(null);
+    const unsubscribe = subscribeToPublishedCommunityPosts(
+      (items) => {
+        setPosts(items);
+        setIsLoading(false);
+        setError(null);
+      },
+      (err) => {
+        setError(err.message || 'Unable to load community posts.');
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!uid || posts.length === 0) {
+      setLikedPostIds(new Set());
+      return;
+    }
+    let active = true;
+    void fetchUserLikedPostIds(
+      posts.map((p) => p.id),
+      uid
+    ).then((liked) => {
+      if (active) setLikedPostIds(liked);
+    });
+    return () => {
+      active = false;
+    };
+  }, [posts, uid]);
 
   const visiblePosts = useMemo(() => {
     if (selectedFilter === 'All Posts') {
-      return HOME_DEMO_POSTS.slice(0, 1);
+      return posts.slice(0, 3);
     }
-    return HOME_DEMO_POSTS.filter((post) => post.category === selectedFilter);
-  }, [selectedFilter]);
+    return posts.filter((post) => post.category === selectedFilter).slice(0, 3);
+  }, [posts, selectedFilter]);
 
-  const toggleLike = (postId: string) => {
-    setLikedPostIds((prev) =>
-      prev.includes(postId) ? prev.filter((id) => id !== postId) : [...prev, postId]
-    );
+  const handleToggleLike = async (postId: string) => {
+    if (!uid || pendingLikeIds.has(postId)) return;
+    setPendingLikeIds((prev) => new Set(prev).add(postId));
+    try {
+      const nowLiked = await toggleCommunityPostLike(postId, uid);
+      setLikedPostIds((prev) => {
+        const next = new Set(prev);
+        if (nowLiked) next.add(postId);
+        else next.delete(postId);
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update like.');
+    } finally {
+      setPendingLikeIds((prev) => {
+        const next = new Set(prev);
+        next.delete(postId);
+        return next;
+      });
+    }
   };
 
   const toggleBookmark = (postId: string) => {
@@ -69,19 +138,71 @@ export const CommunityFeed: React.FC = () => {
         })}
       </div>
 
-      {/* Demo Posts */}
-      <div className="space-y-3">
-        {visiblePosts.map((post) => (
-          <CommunityPostCard
-            key={post.id}
-            post={post}
-            isLiked={likedPostIds.includes(post.id)}
-            isBookmarked={bookmarkedPostIds.includes(post.id)}
-            onToggleLike={toggleLike}
-            onToggleBookmark={toggleBookmark}
-          />
-        ))}
-      </div>
+      {error ? (
+        <div
+          role="alert"
+          className="rounded-2xl bg-[#FFF0F1] border border-[#E63946]/25 p-4 flex items-start gap-2.5 text-xs text-[#E63946]"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">Could not load community feed</p>
+            <p className="text-[11px] text-[#555555] mt-0.5">{error}</p>
+          </div>
+        </div>
+      ) : isLoading ? (
+        <div className="space-y-3" aria-busy="true">
+          <div className="rounded-2xl bg-[#FAF8F5]/75 border border-[#EAE6E1] p-4 space-y-3 animate-pulse">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-full bg-[#EAE6E1]" />
+              <div className="space-y-1.5 flex-1">
+                <div className="h-3 w-32 rounded bg-[#EAE6E1]" />
+                <div className="h-2.5 w-24 rounded bg-[#EAE6E1]/80" />
+              </div>
+            </div>
+            <div className="h-3.5 w-full rounded bg-[#EAE6E1]" />
+            <div className="h-3.5 w-4/5 rounded bg-[#EAE6E1]/80" />
+          </div>
+        </div>
+      ) : visiblePosts.length === 0 ? (
+        <div className="rounded-2xl bg-[#FAF8F5] border border-[#EAE6E1] p-6 text-center space-y-2.5">
+          <div className="w-10 h-10 rounded-xl bg-[#FFF0F1] text-[#E63946] flex items-center justify-center mx-auto">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-[#202124]">
+              {selectedFilter === 'All Posts'
+                ? 'No published community posts yet'
+                : `No posts in ${selectedFilter} yet`}
+            </p>
+            <p className="text-[11px] text-[#777777] mt-0.5">
+              Real updates, team-up requests, and project discussions from verified students will appear here.
+            </p>
+          </div>
+          <Link
+            to="/community"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-[#FFF0F1] border border-[#EAE6E1] text-xs font-bold text-[#E63946] transition-colors"
+          >
+            <span>Explore Community</span>
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {visiblePosts.map((post) => (
+            <CommunityPostCard
+              key={post.id}
+              post={post}
+              currentUid={uid}
+              currentUserName={currentUserName}
+              currentUserAvatar={currentUserAvatar}
+              isLiked={likedPostIds.has(post.id)}
+              isLikePending={pendingLikeIds.has(post.id)}
+              isBookmarked={bookmarkedPostIds.includes(post.id)}
+              onToggleLike={(id) => void handleToggleLike(id)}
+              onToggleBookmark={toggleBookmark}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 };

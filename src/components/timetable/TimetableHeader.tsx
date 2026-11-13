@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, ChevronDown, LogOut, CheckCircle2, Home, Trash2 } from 'lucide-react';
+import { Bell, ChevronDown, LogOut, CheckCircle2, Home, Trash2, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { IdeaLabLogo } from '../shared/IdeaLabLogo';
+import { resolveProfileAvatarUrl } from '../../utils/assets';
 
 interface TimetableHeaderProps {
   isSubmitted: boolean;
@@ -32,6 +33,10 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
   const displayName = studentProfile?.fullName || user?.displayName || studentData.name;
   const displayEmail = studentProfile?.email || user?.email || studentData.email;
   const academicSubtitle = `${studentData.department} • ${studentData.year}`;
+  const resolvedAvatarUrl = resolveProfileAvatarUrl({
+    photoURL: studentProfile?.photoURL || user?.photoURL,
+    avatarPresetId: studentProfile?.avatarPresetId,
+  });
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -153,9 +158,9 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
               aria-expanded={showProfileMenu}
               className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-2xl bg-[#FAF8F5] hover:bg-[#F5F1EC] border border-[#EAE6E1] transition-colors cursor-pointer"
             >
-              {user?.photoURL ? (
+              {resolvedAvatarUrl ? (
                 <img
-                  src={user.photoURL}
+                  src={resolvedAvatarUrl}
                   alt={displayName}
                   referrerPolicy="no-referrer"
                   className="w-8 h-8 rounded-xl object-cover border border-[#EAE6E1]"
@@ -194,6 +199,15 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
                 </div>
 
                 <div className="py-1.5 space-y-0.5">
+                  <Link
+                    to="/profile"
+                    onClick={() => setShowProfileMenu(false)}
+                    className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2"
+                  >
+                    <User className="w-3.5 h-3.5 text-[#777777]" />
+                    <span>My Profile</span>
+                  </Link>
+
                   {hasCompletedTimetable && (
                     <Link
                       to="/home"

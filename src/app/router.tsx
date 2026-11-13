@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
-import { StudentLayout } from '../layouts/StudentLayout';
+import { WorkInProgressLayout } from '../layouts/WorkInProgressLayout';
+import { WorkInProgress } from '../components/shared/WorkInProgress';
 import { AuthGuard } from '../components/auth/AuthGuard';
 import { ProtectedRoute, VerifiedEmailGuard } from '../components/auth/MembershipGuard';
 import { SplashScreen } from '../pages/auth/SplashScreen';
@@ -11,16 +12,7 @@ import { LoginPage } from '../pages/auth/LoginPage';
 import { VerifyEmailPage } from '../pages/auth/VerifyEmailPage';
 import { HomePage } from '../pages/home/HomePage';
 import { TimetablePage } from '../pages/timetable/TimetablePage';
-import { DiscoverPage } from '../pages/discover/DiscoverPage';
-import { ExplorePage } from '../pages/explore/ExplorePage';
-import { ProjectsPage } from '../pages/projects/ProjectsPage';
-import { IdeasPage } from '../pages/ideas/IdeasPage';
-import { CommunityPage } from '../pages/community/CommunityPage';
-import { LeaderboardPage } from '../pages/leaderboard/LeaderboardPage';
-import { AchievementsPage } from '../pages/achievements/AchievementsPage';
-import { EventsPage } from '../pages/events/EventsPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
-import { SettingsPage } from '../pages/settings/SettingsPage';
 
 export const router = createBrowserRouter([
   {
@@ -80,24 +72,34 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: '/profile',
+    element: (
+      <AuthGuard>
+        <VerifiedEmailGuard>
+          <ProfilePage />
+        </VerifiedEmailGuard>
+      </AuthGuard>
+    ),
+  },
+  {
     element: <AuthGuard />,
     children: [
       {
         element: <ProtectedRoute />,
         children: [
           {
-            element: <StudentLayout />,
+            element: <WorkInProgressLayout />,
             children: [
-              { path: '/discover', element: <DiscoverPage /> },
-              { path: '/explore', element: <ExplorePage /> },
-              { path: '/projects', element: <ProjectsPage /> },
-              { path: '/ideas', element: <IdeasPage /> },
-              { path: '/community', element: <CommunityPage /> },
-              { path: '/leaderboard', element: <LeaderboardPage /> },
-              { path: '/achievements', element: <AchievementsPage /> },
-              { path: '/events', element: <EventsPage /> },
-              { path: '/profile', element: <ProfilePage /> },
-              { path: '/settings', element: <SettingsPage /> },
+              { path: '/discover', element: <WorkInProgress /> },
+              { path: '/explore', element: <WorkInProgress /> },
+              { path: '/projects', element: <WorkInProgress /> },
+              { path: '/ideas', element: <WorkInProgress /> },
+              { path: '/community', element: <WorkInProgress /> },
+              { path: '/leaderboard', element: <WorkInProgress /> },
+              { path: '/achievements', element: <WorkInProgress /> },
+              { path: '/events', element: <WorkInProgress /> },
+              { path: '/notifications', element: <WorkInProgress /> },
+              { path: '/settings', element: <WorkInProgress /> },
             ],
           },
         ],

@@ -1,9 +1,12 @@
 import {
+  collectionGroup,
   doc,
   getDoc,
   onSnapshot,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -152,6 +155,94 @@ export function subscribeToStudentAvailability(
     (error) => {
       try {
         handleFirestoreError(error, OperationType.GET, docPath);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
+}
+
+export interface AvailabilityPublicMetadataInput {
+  fullName?: string;
+  department?: string;
+  academicYear?: string;
+  photoURL?: string;
+  avatarPresetId?: string;
+  skills?: string[];
+}
+
+function sanitizeAvailabilityPublicMetadata(
+  input: AvailabilityPublicMetadataInput
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    emailVerified: true,
+  };
+  const cleanName = input.fullName?.trim().slice(0, 100);
+  if (cleanName && cleanName.length >= 2) {
+    result.fullName = cleanName;
+  }
+  const cleanDept = input.department?.trim().slice(0, 80);
+  if (cleanDept && cleanDept.length >= 2) {
+    result.department = cleanDept;
+  }
+  const cleanYear = input.academicYear?.trim().slice(0, 24);
+  if (cleanYear && cleanYear.length >= 2) {
+    result.academicYear = cleanYear;
+  }
+  if (typeof input.photoURL === 'string') {
+    result.photoURL = input.photoURL.trim().slice(0, 1000);
+  }
+  if (typeof input.avatarPresetId === 'string') {
+    result.avatarPresetId = input.avatarPresetId.trim().slice(0, 64);
+  }
+  if (Array.isArray(input.skills)) {
+    result.skills = input.skills
+      .map((s) => s.trim().slice(0, 60))
+      .filter(Boolean)
+      .slice(0, 25);
+  }
+  return result;
+}
+
+export function subscribeToOptedInAvailability(
+  currentUid: string,
+  onData: (peers: StudentAvailabilityDoc[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const path = 'students/*/availability';
+  const q = query(
+    collectionGroup(db, 'availability'),
+    where('isOptedIn', '==', true)
+  );
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const peers: StudentAvailabilityDoc[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as StudentAvailabilityDoc;
+        if (
+          data.uid &&
+          data.uid !== currentUid &&
+          data.isOptedIn === true &&
+          data.hasSubmittedTimetable === true &&
+          typeof data.totalFreePeriods === 'number' &&
+          data.totalFreePeriods > 0 &&
+          Array.isArray(data.freeSlots) &&
+          data.freeSlots.length > 0 &&
+          data.emailVerified !== false
+        ) {
+          peers.push(data);
+        }
+      });
+      peers.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+      onData(peers);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
       } catch (wrapped) {
         if (onError && wrapped instanceof Error) {
           onError(wrapped);
@@ -310,6 +401,18 @@ export async function submitFinalTimetableToFirestore(params: {
     isOptedIn: existingAvailability?.isOptedIn ?? false,
   });
 
+  const canKeepOptIn =
+    Boolean(existingAvailability?.isOptedIn) && derivedAvailability.totalFreePeriods > 0;
+
+  const publicMetadata = sanitizeAvailabilityPublicMetadata({
+    fullName: safeFullName,
+    department,
+    academicYear,
+    photoURL: existingProfile?.photoURL ?? refreshedUser.photoURL ?? undefined,
+    avatarPresetId: existingProfile?.avatarPresetId,
+    skills: existingProfile?.skills,
+  });
+
   const batch = writeBatch(db);
   const timetableRef = doc(db, 'students', uid, 'timetable', 'current');
   const availabilityRef = doc(db, 'students', uid, 'availability', 'current');
@@ -337,6 +440,8 @@ export async function submitFinalTimetableToFirestore(params: {
 
   batch.set(availabilityRef, {
     ...derivedAvailability,
+    isOptedIn: canKeepOptIn,
+    ...publicMetadata,
     updatedAt: serverTimestamp(),
   });
 
@@ -407,12 +512,37 @@ export async function submitFinalTimetableToFirestore(params: {
 
 export async function updateCollaborationAvailabilityOptIn(
   uid: string,
-  isOptedIn: boolean
+  isOptedIn: boolean,
+  publicProfile?: AvailabilityPublicMetadataInput
 ): Promise<void> {
   const docPath = `students/${uid}/availability/current`;
+  const metadataPatch = publicProfile
+    ? sanitizeAvailabilityPublicMetadata(publicProfile)
+    : { emailVerified: true };
+
   try {
     await updateDoc(doc(db, 'students', uid, 'availability', 'current'), {
       isOptedIn: Boolean(isOptedIn),
+      ...metadataPatch,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, docPath);
+  }
+}
+
+export async function syncAvailabilityPublicProfile(
+  uid: string,
+  publicProfile: AvailabilityPublicMetadataInput
+): Promise<void> {
+  const availabilityRef = doc(db, 'students', uid, 'availability', 'current');
+  const docPath = `students/${uid}/availability/current`;
+  try {
+    const snap = await getDoc(availabilityRef);
+    if (!snap.exists()) return;
+    const metadataPatch = sanitizeAvailabilityPublicMetadata(publicProfile);
+    await updateDoc(availabilityRef, {
+      ...metadataPatch,
       updatedAt: serverTimestamp(),
     });
   } catch (error) {

@@ -7,6 +7,12 @@ export type AuthStateStatus =
   | 'needs_timetable'
   | 'ready';
 
+export interface StudentSocialLinks {
+  linkedin?: string;
+  github?: string;
+  portfolio?: string;
+}
+
 export interface StudentProfileDoc {
   uid: string;
   fullName: string;
@@ -17,6 +23,15 @@ export interface StudentProfileDoc {
   currentAcademicYear?: string;
   currentSemester?: string;
   photoURL?: string;
+  avatarPresetId?: string;
+  bannerURL?: string;
+  bannerPresetId?: string;
+  bio?: string;
+  location?: string;
+  phoneNumber?: string;
+  skills?: string[];
+  interests?: string[];
+  socialLinks?: StudentSocialLinks;
   timetableCompleted?: boolean;
   timetableStatus?: 'not_submitted' | 'submitted';
   timetableUpdatedAt?: Timestamp;

@@ -35,7 +35,7 @@ export const StudentLayout: React.FC = () => {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <MobileBottomNav onOpenCreate={() => { setCreateType('project'); setShowCreateModal(true); }} />
+      <MobileBottomNav />
 
       {/* Create Modal (Project or Idea) */}
       {showCreateModal && (

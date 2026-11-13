@@ -115,6 +115,13 @@ export interface StudentAvailabilityDoc {
   isOptedIn: boolean;
   hasSubmittedTimetable: boolean;
   timetableVersion: number;
+  fullName?: string;
+  department?: string;
+  academicYear?: string;
+  photoURL?: string;
+  avatarPresetId?: string;
+  skills?: string[];
+  emailVerified?: boolean;
   updatedAt?: Timestamp;
 }
 

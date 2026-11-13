@@ -60,6 +60,30 @@ service cloud.firestore {
       return !(field in data) || data[field] is bool;
     }
 
+    function isOptionalStringList(data, field, maxItems, maxItemLen) {
+      return !(field in data) || (
+        data[field] is list
+        && data[field].size() <= maxItems
+        && (
+          data[field].size() == 0 || (
+            data[field][0] is string
+            && data[field][0].size() >= 1
+            && data[field][0].size() <= maxItemLen
+          )
+        )
+      );
+    }
+
+    function isOptionalSocialLinks(data) {
+      return !('socialLinks' in data) || (
+        data.socialLinks is map
+        && data.socialLinks.keys().hasOnly(['linkedin', 'github', 'portfolio'])
+        && isOptionalBoundedString(data.socialLinks, 'linkedin', 0, 300)
+        && isOptionalBoundedString(data.socialLinks, 'github', 0, 300)
+        && isOptionalBoundedString(data.socialLinks, 'portfolio', 0, 300)
+      );
+    }
+
     function isValidStudentFields(data, uid) {
       return data.uid is string
         && data.uid == uid
@@ -79,7 +103,16 @@ service cloud.firestore {
         && isOptionalBoundedString(data, 'academicYear', 2, 24)
         && isOptionalBoundedString(data, 'currentAcademicYear', 2, 24)
         && isOptionalBoundedString(data, 'currentSemester', 1, 24)
-        && isOptionalBoundedString(data, 'photoURL', 1, 500)
+        && isOptionalBoundedString(data, 'photoURL', 0, 1000)
+        && isOptionalBoundedString(data, 'avatarPresetId', 0, 64)
+        && isOptionalBoundedString(data, 'bannerURL', 0, 1000)
+        && isOptionalBoundedString(data, 'bannerPresetId', 0, 64)
+        && isOptionalBoundedString(data, 'bio', 0, 600)
+        && isOptionalBoundedString(data, 'location', 0, 120)
+        && isOptionalBoundedString(data, 'phoneNumber', 0, 32)
+        && isOptionalStringList(data, 'skills', 25, 60)
+        && isOptionalStringList(data, 'interests', 25, 60)
+        && isOptionalSocialLinks(data)
         && isOptionalBool(data, 'timetableCompleted')
         && isOptionalBool(data, 'profileSetupCompleted')
         && (!( 'timetableStatus' in data ) || data.timetableStatus in ['not_submitted', 'submitted'])
@@ -99,6 +132,15 @@ service cloud.firestore {
           'currentAcademicYear',
           'currentSemester',
           'photoURL',
+          'avatarPresetId',
+          'bannerURL',
+          'bannerPresetId',
+          'bio',
+          'location',
+          'phoneNumber',
+          'skills',
+          'interests',
+          'socialLinks',
           'timetableCompleted',
           'timetableStatus',
           'timetableUpdatedAt',
@@ -126,6 +168,15 @@ service cloud.firestore {
           'currentAcademicYear',
           'currentSemester',
           'photoURL',
+          'avatarPresetId',
+          'bannerURL',
+          'bannerPresetId',
+          'bio',
+          'location',
+          'phoneNumber',
+          'skills',
+          'interests',
+          'socialLinks',
           'timetableCompleted',
           'timetableStatus',
           'timetableUpdatedAt',
@@ -141,16 +192,25 @@ service cloud.firestore {
         && data.uid == prev.uid
         && data.email == prev.email
         && data.createdAt == prev.createdAt
+        && (!('registrationNumber' in prev) || data.registrationNumber == prev.registrationNumber)
         && data.updatedAt == request.time
         && (!( 'timetableUpdatedAt' in data ) || data.timetableUpdatedAt == request.time || (('timetableUpdatedAt' in prev) && data.timetableUpdatedAt == prev.timetableUpdatedAt))
         && data.diff(prev).affectedKeys().hasOnly([
           'fullName',
-          'registrationNumber',
           'department',
           'academicYear',
           'currentAcademicYear',
           'currentSemester',
           'photoURL',
+          'avatarPresetId',
+          'bannerURL',
+          'bannerPresetId',
+          'bio',
+          'location',
+          'phoneNumber',
+          'skills',
+          'interests',
+          'socialLinks',
           'timetableCompleted',
           'timetableStatus',
           'timetableUpdatedAt',
@@ -171,6 +231,15 @@ service cloud.firestore {
           'currentAcademicYear',
           'currentSemester',
           'photoURL',
+          'avatarPresetId',
+          'bannerURL',
+          'bannerPresetId',
+          'bio',
+          'location',
+          'phoneNumber',
+          'skills',
+          'interests',
+          'socialLinks',
           'timetableCompleted',
           'timetableStatus',
           'timetableUpdatedAt',
@@ -267,6 +336,13 @@ service cloud.firestore {
           'isOptedIn',
           'hasSubmittedTimetable',
           'timetableVersion',
+          'fullName',
+          'department',
+          'academicYear',
+          'photoURL',
+          'avatarPresetId',
+          'skills',
+          'emailVerified',
           'updatedAt'
         ])
         && data.uid == uid
@@ -278,7 +354,178 @@ service cloud.firestore {
         && data.utilizationPercentage is int && data.utilizationPercentage >= 0 && data.utilizationPercentage <= 100
         && data.isOptedIn is bool
         && data.hasSubmittedTimetable is bool
+        && (!data.isOptedIn || (data.hasSubmittedTimetable == true && data.totalFreePeriods > 0))
         && data.timetableVersion is int && data.timetableVersion >= 1 && data.timetableVersion <= 1000
+        && isOptionalBoundedString(data, 'fullName', 2, 100)
+        && isOptionalBoundedString(data, 'department', 2, 80)
+        && isOptionalBoundedString(data, 'academicYear', 2, 24)
+        && isOptionalBoundedString(data, 'photoURL', 0, 1000)
+        && isOptionalBoundedString(data, 'avatarPresetId', 0, 64)
+        && isOptionalStringList(data, 'skills', 25, 60)
+        && isOptionalBool(data, 'emailVerified')
+        && data.updatedAt == request.time;
+    }
+
+    function isValidCampusProject(data) {
+      return data.keys().hasAll([
+          'title',
+          'description',
+          'category',
+          'creatorUid',
+          'creatorName',
+          'likesCount',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title',
+          'tagline',
+          'description',
+          'category',
+          'coverImage',
+          'tags',
+          'creatorUid',
+          'creatorName',
+          'creatorAvatar',
+          'teamMembers',
+          'likesCount',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 120
+        && isOptionalBoundedString(data, 'tagline', 0, 200)
+        && data.description is string && data.description.size() >= 4 && data.description.size() <= 2000
+        && data.category is string && data.category.size() >= 2 && data.category.size() <= 40
+        && isOptionalBoundedString(data, 'coverImage', 0, 1000)
+        && isOptionalStringList(data, 'tags', 12, 40)
+        && data.creatorUid is string && isValidId(data.creatorUid)
+        && data.creatorName is string && data.creatorName.size() >= 2 && data.creatorName.size() <= 100
+        && isOptionalBoundedString(data, 'creatorAvatar', 0, 1000)
+        && (!('teamMembers' in data) || (
+          data.teamMembers is list
+          && data.teamMembers.size() <= 10
+          && (data.teamMembers.size() == 0 || data.teamMembers[0] is map)
+        ))
+        && data.likesCount is int && data.likesCount >= 0 && data.likesCount <= 1000000
+        && data.status in ['draft', 'published', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCommunityPost(data) {
+      return data.keys().hasAll([
+          'authorUid',
+          'authorName',
+          'category',
+          'content',
+          'likesCount',
+          'commentsCount',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'authorUid',
+          'authorName',
+          'authorDepartment',
+          'authorYear',
+          'authorAvatar',
+          'authorAvatarPresetId',
+          'category',
+          'content',
+          'hashtags',
+          'likesCount',
+          'commentsCount',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.authorUid is string && isValidId(data.authorUid)
+        && data.authorName is string && data.authorName.size() >= 2 && data.authorName.size() <= 100
+        && isOptionalBoundedString(data, 'authorDepartment', 0, 80)
+        && isOptionalBoundedString(data, 'authorYear', 0, 24)
+        && isOptionalBoundedString(data, 'authorAvatar', 0, 1000)
+        && isOptionalBoundedString(data, 'authorAvatarPresetId', 0, 64)
+        && data.category in ['Projects', 'Ideas', 'Team Up', 'Updates']
+        && data.content is string && data.content.size() >= 2 && data.content.size() <= 1200
+        && isOptionalStringList(data, 'hashtags', 8, 40)
+        && data.likesCount is int && data.likesCount >= 0 && data.likesCount <= 1000000
+        && data.commentsCount is int && data.commentsCount >= 0 && data.commentsCount <= 1000000
+        && data.status in ['published', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPostComment(data) {
+      return data.keys().hasAll(['authorUid', 'authorName', 'content', 'createdAt'])
+        && data.keys().hasOnly(['authorUid', 'authorName', 'authorAvatar', 'content', 'createdAt'])
+        && data.authorUid == request.auth.uid
+        && data.authorName is string && data.authorName.size() >= 2 && data.authorName.size() <= 100
+        && isOptionalBoundedString(data, 'authorAvatar', 0, 1000)
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 500
+        && data.createdAt == request.time;
+    }
+
+    function isValidCampusEvent(data) {
+      return data.keys().hasAll(['title', 'eventDate', 'timeRange', 'location', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'title',
+          'description',
+          'eventDate',
+          'timeRange',
+          'location',
+          'category',
+          'thumbnail',
+          'capacity',
+          'registeredCount',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 160
+        && isOptionalBoundedString(data, 'description', 0, 2000)
+        && data.eventDate is timestamp
+        && data.timeRange is string && data.timeRange.size() >= 2 && data.timeRange.size() <= 60
+        && data.location is string && data.location.size() >= 2 && data.location.size() <= 140
+        && isOptionalBoundedString(data, 'category', 2, 40)
+        && isOptionalBoundedString(data, 'thumbnail', 0, 1000)
+        && (!('capacity' in data) || (data.capacity is int && data.capacity >= 1 && data.capacity <= 10000))
+        && (!('registeredCount' in data) || (data.registeredCount is int && data.registeredCount >= 0 && data.registeredCount <= 10000))
+        && data.status in ['draft', 'published', 'cancelled']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLeaderboardEntry(data, uid) {
+      return data.keys().hasAll(['uid', 'fullName', 'department', 'approvedPoints', 'status', 'updatedAt'])
+        && data.keys().hasOnly([
+          'uid',
+          'fullName',
+          'department',
+          'academicYear',
+          'photoURL',
+          'avatarPresetId',
+          'approvedPoints',
+          'projectsCompleted',
+          'badge',
+          'status',
+          'awardedBy',
+          'updatedAt'
+        ])
+        && data.uid == uid
+        && isValidId(data.uid)
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100
+        && data.department is string && data.department.size() >= 2 && data.department.size() <= 80
+        && isOptionalBoundedString(data, 'academicYear', 0, 24)
+        && isOptionalBoundedString(data, 'photoURL', 0, 1000)
+        && isOptionalBoundedString(data, 'avatarPresetId', 0, 64)
+        && data.approvedPoints is int && data.approvedPoints >= 0 && data.approvedPoints <= 1000000
+        && (!('projectsCompleted' in data) || (data.projectsCompleted is int && data.projectsCompleted >= 0 && data.projectsCompleted <= 1000))
+        && isOptionalBoundedString(data, 'badge', 0, 60)
+        && data.status in ['active', 'hidden']
+        && isOptionalBoundedString(data, 'awardedBy', 1, 128)
         && data.updatedAt == request.time;
     }
 
@@ -343,10 +590,8 @@ service cloud.firestore {
           resource.data.uid == request.auth.uid ||
           (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com') ||
           (
-            isEmailVerified()
+            isVerifiedStudent()
             && resource.data.isOptedIn == true
-            && resource.data.hasSubmittedTimetable == true
-            && resource.data.totalFreePeriods > 0
           )
         );
 
@@ -363,12 +608,199 @@ service cloud.firestore {
           && isValidAvailabilityWrite(incoming(), uid)
           && incoming().uid == existing().uid
           && (
-            incoming().diff(existing()).affectedKeys().hasOnly(['isOptedIn', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'isOptedIn',
+              'fullName',
+              'department',
+              'academicYear',
+              'photoURL',
+              'avatarPresetId',
+              'skills',
+              'emailVerified',
+              'updatedAt'
+            ]) ||
             incoming().timetableVersion >= existing().timetableVersion
           );
 
         allow delete: if isValidId(uid) && isAdmin();
       }
+    }
+
+    // Collection-group read access for opted-in collaboration availability (zero PII fields)
+    match /{path=**}/availability/{docId} {
+      allow list: if isSignedIn() && (
+        resource.data.uid == request.auth.uid ||
+        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com') ||
+        (
+          isVerifiedStudent()
+          && resource.data.isOptedIn == true
+        )
+      );
+    }
+
+    match /projects/{projectId} {
+      allow get: if isValidId(projectId) && isVerifiedStudent() && (
+        existing().status == 'published' ||
+        existing().creatorUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isVerifiedStudent() && (
+        resource.data.status == 'published' ||
+        resource.data.creatorUid == request.auth.uid ||
+        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+      );
+      allow create: if isValidId(projectId)
+        && isVerifiedStudent()
+        && isValidCampusProject(incoming())
+        && incoming().creatorUid == request.auth.uid
+        && incoming().likesCount == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(projectId)
+        && isVerifiedStudent()
+        && isValidCampusProject(incoming())
+        && incoming().creatorUid == existing().creatorUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().creatorUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title',
+              'tagline',
+              'description',
+              'category',
+              'coverImage',
+              'tags',
+              'teamMembers',
+              'status',
+              'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(projectId) && (
+        isAdmin() || (isVerifiedStudent() && existing().creatorUid == request.auth.uid)
+      );
+    }
+
+    match /communityPosts/{postId} {
+      allow get: if isValidId(postId) && isVerifiedStudent() && (
+        existing().status == 'published' ||
+        existing().authorUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isVerifiedStudent() && (
+        resource.data.status == 'published' ||
+        resource.data.authorUid == request.auth.uid ||
+        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+      );
+      allow create: if isValidId(postId)
+        && isVerifiedStudent()
+        && isValidCommunityPost(incoming())
+        && incoming().authorUid == request.auth.uid
+        && incoming().status == 'published'
+        && incoming().likesCount == 0
+        && incoming().commentsCount == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(postId)
+        && isVerifiedStudent()
+        && isValidCommunityPost(incoming())
+        && incoming().authorUid == existing().authorUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().authorUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'hashtags', 'category', 'status', 'updatedAt'])
+          ) ||
+          (
+            existing().status == 'published'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt'])
+            && (
+              (
+                incoming().likesCount == existing().likesCount + 1 &&
+                existsAfter(/databases/$(database)/documents/communityPosts/$(postId)/likes/$(request.auth.uid)) &&
+                !exists(/databases/$(database)/documents/communityPosts/$(postId)/likes/$(request.auth.uid))
+              ) ||
+              (
+                incoming().likesCount == existing().likesCount - 1 &&
+                !existsAfter(/databases/$(database)/documents/communityPosts/$(postId)/likes/$(request.auth.uid)) &&
+                exists(/databases/$(database)/documents/communityPosts/$(postId)/likes/$(request.auth.uid))
+              )
+            )
+          ) ||
+          (
+            existing().status == 'published'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount', 'updatedAt'])
+            && incoming().commentsCount == existing().commentsCount + 1
+          )
+        );
+      allow delete: if isValidId(postId) && (
+        isAdmin() || (isVerifiedStudent() && existing().authorUid == request.auth.uid)
+      );
+
+      match /likes/{uid} {
+        allow get: if isValidId(postId) && isValidId(uid) && isVerifiedStudent();
+        allow list: if isValidId(postId) && isVerifiedStudent() && resource.data.uid == request.auth.uid;
+        allow create: if isValidId(postId)
+          && isValidId(uid)
+          && isOwner(uid)
+          && isVerifiedStudent()
+          && incoming().keys().hasAll(['uid', 'createdAt'])
+          && incoming().keys().hasOnly(['uid', 'createdAt'])
+          && incoming().uid == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/communityPosts/$(postId));
+        allow delete: if isValidId(postId)
+          && isValidId(uid)
+          && isOwner(uid)
+          && isVerifiedStudent();
+      }
+
+      match /comments/{commentId} {
+        allow get, list: if isValidId(postId) && isVerifiedStudent() &&
+          get(/databases/$(database)/documents/communityPosts/$(postId)).data.status == 'published';
+        allow create: if isValidId(postId)
+          && isValidId(commentId)
+          && isVerifiedStudent()
+          && isValidPostComment(incoming())
+          && get(/databases/$(database)/documents/communityPosts/$(postId)).data.status == 'published';
+        allow delete: if isValidId(postId) && isValidId(commentId) && (
+          isAdmin() || (isVerifiedStudent() && existing().authorUid == request.auth.uid)
+        );
+      }
+    }
+
+    match /events/{eventId} {
+      allow get: if isValidId(eventId) && isVerifiedStudent() && (
+        existing().status == 'published' || isAdmin()
+      );
+      allow list: if isVerifiedStudent() && (
+        resource.data.status == 'published' ||
+        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+      );
+      allow create: if isValidId(eventId) && isAdmin() && isValidCampusEvent(incoming())
+        && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isValidId(eventId) && isAdmin() && isValidCampusEvent(incoming())
+        && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow delete: if isValidId(eventId) && isAdmin();
+    }
+
+    match /leaderboard/{uid} {
+      allow get: if isValidId(uid) && isVerifiedStudent() && (
+        existing().status == 'active' || isOwner(uid) || isAdmin()
+      );
+      allow list: if isVerifiedStudent() && (
+        resource.data.status == 'active' ||
+        resource.data.uid == request.auth.uid ||
+        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+      );
+      // Strictly coordinator/admin-controlled points: students can NEVER modify their own points
+      allow create, update: if isValidId(uid) && isAdmin() && isValidLeaderboardEntry(incoming(), uid);
+      allow delete: if isValidId(uid) && isAdmin();
     }
 
     match /admins/{uid} {

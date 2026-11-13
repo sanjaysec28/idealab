@@ -5,7 +5,6 @@ import { AuthProvider } from '../context/AuthContext';
 import { LoadingProvider } from '../context/LoadingContext';
 import { AppSplashOverlay } from '../components/shared/AppSplashOverlay';
 import { BackgroundRefreshBar } from '../components/shared/BackgroundRefreshBar';
-import { DevStateSwitcher } from '../components/shared/DevStateSwitcher';
 
 export const Providers: React.FC = () => {
   return (
@@ -14,7 +13,6 @@ export const Providers: React.FC = () => {
         <BackgroundRefreshBar />
         <RouterProvider router={router} />
         <AppSplashOverlay />
-        <DevStateSwitcher />
       </LoadingProvider>
     </AuthProvider>
   );

@@ -1,11 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Bookmark } from 'lucide-react';
-import { HomeDemoProject } from '../../data/homeDemoData';
+import { PublishedProject } from '../../services/homeDataService';
 import { SafeMediaImage } from './SafeMediaImage';
 
 interface ProjectCardProps {
-  project: HomeDemoProject;
+  project: PublishedProject;
   isBookmarked: boolean;
   onToggleBookmark: (projectId: string) => void;
 }
@@ -15,6 +15,13 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   isBookmarked,
   onToggleBookmark,
 }) => {
+  const contributors =
+    project.teamMembers.length > 0
+      ? project.teamMembers
+      : [{ name: project.creatorName, avatar: project.creatorAvatar }];
+  const visibleContributors = contributors.slice(0, 3);
+  const extraCount = Math.max(0, contributors.length - visibleContributors.length);
+
   return (
     <article className="bg-[#FAF8F5]/65 hover:bg-white rounded-2xl border border-[#EAE6E1] overflow-hidden transition-all hover:shadow-sm flex flex-col">
       <Link to="/projects" className="relative block aspect-[16/10] overflow-hidden bg-[#F2ECE3] group">
@@ -39,28 +46,38 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
             {project.title}
           </Link>
           <p className="mt-1 text-[11.5px] text-[#777777] leading-relaxed line-clamp-2">
-            {project.description}
+            {project.tagline || project.description}
           </p>
+          {project.tags.length > 0 && (
+            <p className="mt-1.5 text-[10.5px] font-medium text-[#777777] truncate">
+              {project.tags.slice(0, 3).join(' · ')}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center justify-between pt-2 border-t border-[#EAE6E1]/70">
-          <div className="flex items-center">
-            <div className="flex -space-x-1.5">
-              {project.contributorAvatars.map((avatar, idx) => (
+          <div className="flex items-center min-w-0">
+            <div className="flex -space-x-1.5 shrink-0">
+              {visibleContributors.map((member, idx) => (
                 <SafeMediaImage
                   key={`${project.id}-av-${idx}`}
-                  src={avatar}
-                  alt={`${project.title} contributor ${idx + 1}`}
+                  src={member.avatar || ''}
+                  alt={member.name}
                   variant="avatar"
-                  fallbackInitials={`C${idx + 1}`}
                   lazy
                   className="w-6 h-6 rounded-full object-cover ring-2 ring-white text-[9px]"
                 />
               ))}
             </div>
-            <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-[#FFF0F1] text-[10px] font-bold text-[#E63946] tabular-nums">
-              +{project.extraContributors}
-            </span>
+            {extraCount > 0 ? (
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-[#FFF0F1] text-[10px] font-bold text-[#E63946] tabular-nums">
+                +{extraCount}
+              </span>
+            ) : (
+              <span className="ml-2 text-[11px] font-medium text-[#555555] truncate">
+                {project.creatorName}
+              </span>
+            )}
           </div>
 
           <button
@@ -68,7 +85,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
             onClick={() => onToggleBookmark(project.id)}
             aria-label={isBookmarked ? `Remove ${project.title} bookmark` : `Bookmark ${project.title}`}
             aria-pressed={isBookmarked}
-            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
               isBookmarked
                 ? 'bg-[#FFF0F1] text-[#E63946]'
                 : 'text-[#777777] hover:text-[#202124] hover:bg-[#FAF8F5]'
