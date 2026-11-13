@@ -56,8 +56,8 @@ export const ASSETS = {
     project: '/images/desk-card.png',
   },
   home: {
-    heroDesktop: '/images/desk-card.png',
-    heroMobile: '/images/desk-card.png',
+    heroDesktop: '/images/home-header.png',
+    heroMobile: '/images/home-header.png',
     projectCovers: {
       smartCampusAssistant:
         'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=900&q=80',
