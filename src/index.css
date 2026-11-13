@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@layer base {
+  html,
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #FAF8F3;
+    color: #202124;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+}
+
+.idea-splash-backdrop {
+  background: linear-gradient(180deg, #e1051e 0%, #dc061d 50%, #d6081c 100%);
+}
+
+.idea-splash-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url('/images/splash-screen.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+@media (max-aspect-ratio: 3/5) {
+  .idea-splash-canvas {
+    top: 50%;
+    bottom: auto;
+    height: min(100dvh, 175vw);
+    transform: translateY(-50%);
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      black 10%,
+      black 90%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      black 10%,
+      black 90%,
+      transparent 100%
+    );
+  }
+}
+
+@keyframes idea-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(40%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+.idea-refresh-indicator {
+  animation: idea-progress-slide 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idea-refresh-indicator {
+    animation: none;
+    transform: none;
+    width: 100%;
+    opacity: 0.85;
+  }
+}
