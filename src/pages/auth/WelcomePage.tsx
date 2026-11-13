@@ -2,32 +2,30 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ASSETS } from '../../utils/assets';
-import { GoogleSignInModal } from '../../components/auth/GoogleSignInModal';
-import { GoogleSignInOptions } from '../../types/auth';
 
 export const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signInWithGoogle, resolveDestinationPath, isAuthLoading } = useAuth();
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const { signInWithGoogle, resolveDestinationPath, isBusy } = useAuth();
+  const [googleError, setGoogleError] = useState<string | null>(null);
 
   const intendedFrom = (location.state as { from?: string } | null)?.from;
 
-  const handleGoogleSignIn = () => {
-    setShowGoogleModal(true);
-  };
-
-  const handleSelectGoogleAccount = async (options: GoogleSignInOptions) => {
-    const result = await signInWithGoogle(options);
-    setShowGoogleModal(false);
-    const destination = resolveDestinationPath(intendedFrom, result.membership, result.profile);
-    navigate(destination, { replace: true, state: { from: intendedFrom } });
+  const handleGoogleSignIn = async () => {
+    setGoogleError(null);
+    try {
+      const nextState = await signInWithGoogle();
+      const destination = resolveDestinationPath(intendedFrom, nextState);
+      navigate(destination, { replace: true, state: { from: intendedFrom } });
+    } catch (err) {
+      setGoogleError(err instanceof Error ? err.message : 'Google Sign-In failed.');
+    }
   };
 
   return (
-    <main className="h-[100dvh] md:h-auto md:min-h-[100dvh] w-full bg-[#FAF8F3] text-[#202124] flex flex-col justify-start md:justify-between overflow-hidden md:overflow-visible lg:flex-row lg:h-[100dvh] lg:overflow-hidden">
+    <main className="h-[100dvh] md:h-auto md:min-h-[100dvh] w-full bg-[#FAF8F5] text-[#202124] flex flex-col justify-between overflow-hidden md:overflow-visible lg:flex-row lg:h-[100dvh] lg:overflow-hidden">
       {/* Left Authentication Panel on Desktop / Unwrapped via display:contents on Mobile & Tablet */}
-      <section className="contents lg:flex lg:flex-col lg:justify-center lg:w-[39%] xl:w-[38%] lg:h-full lg:bg-[#FAF8F3] lg:relative lg:px-10 xl:px-14 lg:py-10 lg:overflow-hidden">
+      <section className="contents lg:flex lg:flex-col lg:justify-center lg:w-[40%] xl:w-[39%] lg:h-full lg:bg-transparent lg:relative lg:z-10 lg:px-10 xl:px-14 lg:py-10 lg:overflow-hidden">
         {/* 1. Brand Lockup + Heading (Tablet & Desktop only — mob-card.png already includes mobile branding & heading) */}
         <div className="hidden md:flex order-1 lg:order-none relative z-10 w-full max-w-[440px] mx-auto px-5 pt-5 pb-3 lg:p-0 flex-col items-center lg:items-start text-center lg:text-left">
           {/* Brand Lockup */}
@@ -80,12 +78,19 @@ export const WelcomePage: React.FC = () => {
         </div>
 
         {/* 3. Auth Action Buttons & Sign-In Link */}
-        <div className="order-3 lg:order-none relative z-10 mt-4 md:mt-0 lg:mt-9 bg-[#FAF8F3] md:bg-white lg:bg-transparent md:rounded-none px-5 pt-1 pb-[max(20px,env(safe-area-inset-bottom))] md:pt-5 md:pb-10 lg:p-0 w-full lg:max-w-[440px] lg:mx-auto shrink-0">
+        <div className="order-3 lg:order-none relative z-10 flex-1 flex flex-col justify-center md:flex-none -mt-3 md:mt-0 lg:mt-9 bg-transparent px-5 pt-1 pb-[max(20px,env(safe-area-inset-bottom))] md:pt-4 md:pb-10 lg:p-0 w-full lg:max-w-[440px] lg:mx-auto shrink-0">
           <div className="max-w-md mx-auto lg:max-w-none w-full space-y-3 lg:space-y-3.5">
+            {googleError && (
+              <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium text-center">
+                {googleError}
+              </div>
+            )}
+
             <button
               type="button"
+              disabled={isBusy}
               onClick={handleGoogleSignIn}
-              className="w-full h-[52px] md:h-12 px-6 rounded-full bg-[#E63946] hover:bg-[#d62839] active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-[#E63946]/25 transition-all flex items-center justify-center gap-3 cursor-pointer"
+              className="w-full h-[52px] md:h-12 px-6 rounded-full bg-[#E63946] hover:bg-[#d62839] active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-[#E63946]/25 transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60"
             >
               <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -105,11 +110,13 @@ export const WelcomePage: React.FC = () => {
                   d="M12 6.1c1.5 0 2.84.52 3.9 1.53l2.92-2.92C17.05 3.06 14.74 2 12 2 8.07 2 4.66 4.11 2.98 7.46l3.54 2.68C7.29 7.82 9.45 6.1 12 6.1z"
                 />
               </svg>
-              <span className="whitespace-nowrap">Continue with Google</span>
+              <span className="whitespace-nowrap">
+                {isBusy ? 'Signing in...' : 'Continue with Google'}
+              </span>
             </button>
 
             <Link
-              to="/join"
+              to="/signup"
               className="w-full h-[50px] md:h-12 px-6 rounded-full bg-white hover:bg-[#FAFAFA] active:scale-[0.99] text-[#202124] border border-[#E5E5E5] font-semibold text-sm shadow-xs transition-all flex items-center justify-center"
             >
               <span className="whitespace-nowrap">Request to Join</span>
@@ -147,25 +154,18 @@ export const WelcomePage: React.FC = () => {
         </svg>
       </section>
 
-      {/* 2. Responsive Illustration Panel (Single <picture> Element) */}
-      <section className="order-2 lg:order-none w-full md:flex-1 lg:flex-none lg:w-[61%] xl:w-[62%] lg:h-full flex items-start md:items-center justify-center overflow-hidden p-0 md:px-8 md:py-4 lg:p-0 bg-[#FAF8F3]">
-        <picture className="block w-full rounded-t-[22px] md:max-w-[460px] lg:max-w-none lg:h-full md:rounded-3xl lg:rounded-none overflow-hidden md:shadow-md lg:shadow-none">
+      {/* 2. Responsive Illustration Panel with Natural CSS Mask Blending */}
+      <section className="order-2 lg:order-none w-full flex-none md:flex-none lg:-ml-12 xl:-ml-16 lg:w-[calc(60%+3rem)] xl:w-[calc(61%+4rem)] lg:h-full flex items-start md:items-center justify-center overflow-hidden p-0 md:px-8 md:py-4 lg:p-0 bg-transparent">
+        <picture className="block w-full h-auto md:max-w-[480px] lg:max-w-none lg:h-full overflow-hidden welcome-hero-mask">
           <source media="(max-width: 767px)" srcSet={ASSETS.welcomeHeroMobile} />
           <img
             src={ASSETS.welcomeHero}
             alt="IDEA LAB students collaborating on Saveetha Engineering College campus"
             referrerPolicy="no-referrer"
-            className="w-full h-auto max-h-[calc(100dvh-195px)] md:max-h-none lg:h-full block object-cover object-top md:object-center lg:object-[center_45%] select-none"
+            className="w-full h-auto max-h-[calc(100dvh-176px)] md:max-h-none lg:h-full block object-cover object-top md:object-center lg:object-[46%_45%] select-none"
           />
         </picture>
       </section>
-
-      <GoogleSignInModal
-        isOpen={showGoogleModal}
-        onClose={() => setShowGoogleModal(false)}
-        onSelectAccount={handleSelectGoogleAccount}
-        isSubmitting={isAuthLoading}
-      />
     </main>
   );
 };

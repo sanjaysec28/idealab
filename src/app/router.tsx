@@ -2,17 +2,16 @@ import React from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { StudentLayout } from '../layouts/StudentLayout';
 import { AuthGuard } from '../components/auth/AuthGuard';
-import { MembershipGuard } from '../components/auth/MembershipGuard';
+import { ProtectedRoute } from '../components/auth/MembershipGuard';
 import { SplashScreen } from '../pages/auth/SplashScreen';
 import { WelcomePage } from '../pages/auth/WelcomePage';
 import { OnboardingPage } from '../pages/auth/OnboardingPage';
+import { SignupPage } from '../pages/auth/SignupPage';
 import { LoginPage } from '../pages/auth/LoginPage';
-import { JoinPage } from '../pages/auth/JoinPage';
-import { SetupProfilePage } from '../pages/auth/SetupProfilePage';
-import { TimetableSetupPage } from '../pages/auth/TimetableSetupPage';
+import { VerifyEmailPage } from '../pages/auth/VerifyEmailPage';
+import { MembershipRequestPage } from '../pages/auth/MembershipRequestPage';
 import { PendingApprovalPage } from '../pages/auth/PendingApprovalPage';
-import { ApplicationRejectedPage } from '../pages/auth/ApplicationRejectedPage';
-import { AccountSuspendedPage } from '../pages/auth/AccountSuspendedPage';
+import { MembershipRejectedPage } from '../pages/auth/MembershipRejectedPage';
 import { DiscoverPage } from '../pages/discover/DiscoverPage';
 import { ExplorePage } from '../pages/explore/ExplorePage';
 import { ProjectsPage } from '../pages/projects/ProjectsPage';
@@ -42,12 +41,32 @@ export const router = createBrowserRouter([
     element: <OnboardingPage />,
   },
   {
+    path: '/signup',
+    element: <SignupPage />,
+  },
+  {
     path: '/login',
     element: <LoginPage />,
   },
   {
     path: '/join',
-    element: <JoinPage />,
+    element: <Navigate to="/signup" replace />,
+  },
+  {
+    path: '/verify-email',
+    element: (
+      <AuthGuard>
+        <VerifyEmailPage />
+      </AuthGuard>
+    ),
+  },
+  {
+    path: '/membership-request',
+    element: (
+      <AuthGuard>
+        <MembershipRequestPage />
+      </AuthGuard>
+    ),
   },
   {
     path: '/pending-approval',
@@ -58,35 +77,23 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: '/application-rejected',
+    path: '/membership-rejected',
     element: (
       <AuthGuard>
-        <ApplicationRejectedPage />
+        <MembershipRejectedPage />
       </AuthGuard>
     ),
   },
   {
-    path: '/account-suspended',
-    element: (
-      <AuthGuard>
-        <AccountSuspendedPage />
-      </AuthGuard>
-    ),
+    path: '/application-rejected',
+    element: <Navigate to="/membership-rejected" replace />,
   },
   {
     element: <AuthGuard />,
     children: [
       {
-        element: <MembershipGuard />,
+        element: <ProtectedRoute />,
         children: [
-          {
-            path: '/setup-profile',
-            element: <SetupProfilePage />,
-          },
-          {
-            path: '/timetable-setup',
-            element: <TimetableSetupPage />,
-          },
           {
             element: <StudentLayout />,
             children: [

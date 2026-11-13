@@ -1,175 +1,262 @@
 import React, { useState } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { LogIn, Mail, Eye, EyeOff, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Logo } from '../../components/navigation/Logo';
 import { useAuth } from '../../context/AuthContext';
-import { GoogleSignInModal } from '../../components/auth/GoogleSignInModal';
-import { GoogleSignInOptions } from '../../types/auth';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signInWithGoogle, signInWithEmail, resolveDestinationPath, isAuthLoading, authError } = useAuth();
-  const [useEmailForm, setUseEmailForm] = useState(false);
-  const [email, setEmail] = useState('ananya.sec2024101@saveetha.ac.in');
-  const [password, setPassword] = useState('password123');
+  const { signIn, sendPasswordReset, resolveDestinationPath, isBusy } = useAuth();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const intendedFrom = (location.state as { from?: string } | null)?.from;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLocalError(null);
+    setError(null);
+
+    if (!email.trim() || !password) {
+      setError('Enter both your college email and password.');
+      return;
+    }
+
     try {
-      const result = await signInWithEmail({ email, password });
-      const destination = resolveDestinationPath(intendedFrom, result.membership, result.profile);
-      navigate(destination, { replace: true, state: { from: intendedFrom } });
+      const nextState = await signIn({
+        email: email.trim().toLowerCase(),
+        password,
+        rememberMe,
+      });
+      const destination = resolveDestinationPath(intendedFrom, nextState);
+      navigate(destination, { replace: true });
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Unable to sign in.');
+      setError(err instanceof Error ? err.message : 'Unable to sign in.');
     }
   };
 
-  const handleSelectGoogleAccount = async (options: GoogleSignInOptions) => {
-    setLocalError(null);
-    const result = await signInWithGoogle(options);
-    setShowGoogleModal(false);
-    const destination = resolveDestinationPath(intendedFrom, result.membership, result.profile);
-    navigate(destination, { replace: true, state: { from: intendedFrom } });
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setResetSent(false);
+
+    if (!resetEmail.trim()) {
+      setError('Enter your registered college email address.');
+      return;
+    }
+
+    setIsResetting(true);
+    try {
+      await sendPasswordReset(resetEmail);
+      setResetSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send password reset email.');
+    } finally {
+      setIsResetting(false);
+    }
   };
 
-  const activeError = localError || authError;
-
   return (
-    <div className="min-h-screen bg-[#FAF8F3] flex flex-col justify-center items-center p-6 text-[#202124] relative">
-      <div className="absolute top-6 left-6">
+    <div className="min-h-[100dvh] bg-[#FAF8F5] text-[#202124] flex flex-col justify-between px-5 py-6 sm:py-8">
+      <div className="max-w-[420px] w-full mx-auto flex items-center justify-between">
+        <Link to="/welcome" aria-label="IDEA LAB Home">
+          <Logo size="sm" />
+        </Link>
         <Link
           to="/welcome"
-          className="flex items-center gap-2 text-xs font-semibold text-[#777777] hover:text-[#202124] bg-white px-4 py-2 rounded-xl border border-[#EEEEEE] shadow-sm"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-[#777777] hover:text-[#202124] transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back</span>
         </Link>
       </div>
 
-      <div className="max-w-md w-full bg-white rounded-3xl border border-[#EEEEEE] p-8 lg:p-10 shadow-xl space-y-6 text-center">
-        <div className="flex justify-center mb-2">
-          <Logo size="md" />
-        </div>
+      <div className="max-w-[420px] w-full mx-auto my-6 bg-white rounded-2xl border border-[#EEEEEE] shadow-xs p-6 sm:p-8 space-y-5">
+        {!forgotMode ? (
+          <>
+            <div className="space-y-1">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#202124]">
+                Sign in to IDEA LAB
+              </h1>
+              <p className="text-xs text-[#777777]">
+                Enter your Saveetha college credentials to continue.
+              </p>
+            </div>
 
-        <div className="space-y-1">
-          <h1 className="text-2xl font-extrabold text-[#202124]">Welcome Back! 👋</h1>
-          <p className="text-xs text-[#777777]">Sign in to verify your IDEA LAB membership and continue.</p>
-        </div>
+            {error && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
 
-        {activeError && (
-          <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-start gap-2 text-left">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{activeError}</span>
-          </div>
-        )}
-
-        <div className="space-y-3 pt-2">
-          <button
-            type="button"
-            disabled={isAuthLoading}
-            onClick={() => setShowGoogleModal(true)}
-            className="w-full flex items-center justify-center gap-3 bg-[#E63946] hover:bg-[#d62839] text-white font-bold py-3.5 px-6 rounded-2xl shadow-lg shadow-[#E63946]/20 transition-all text-xs cursor-pointer disabled:opacity-60"
-          >
-            <svg className="w-4 h-4 fill-current text-white" viewBox="0 0 24 24">
-              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
-            <span>Continue with Google</span>
-          </button>
-
-          <div className="relative flex py-2 items-center">
-            <div className="flex-grow border-t border-[#EEEEEE]"></div>
-            <span className="flex-shrink mx-4 text-xs text-[#777777]">or</span>
-            <div className="flex-grow border-t border-[#EEEEEE]"></div>
-          </div>
-
-          {!useEmailForm ? (
-            <button
-              type="button"
-              onClick={() => setUseEmailForm(true)}
-              className="w-full flex items-center justify-center gap-2 bg-white hover:bg-[#FAFAFA] text-[#202124] border border-[#EEEEEE] font-semibold py-3.5 px-6 rounded-2xl shadow-sm transition-all text-xs cursor-pointer"
-            >
-              <Mail className="w-4 h-4 text-[#777777]" />
-              <span>Continue with Email</span>
-            </button>
-          ) : (
-            <form onSubmit={handleLogin} className="space-y-4 text-left pt-2">
+            <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[#202124] mb-1.5 uppercase tracking-wider">
-                  College Email
+                <label className="block text-[11px] font-semibold text-[#202124] mb-1">
+                  College Email Address
                 </label>
                 <input
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="student@saveetha.ac.in"
-                  className="w-full bg-[#FAFAFA] border border-[#EEEEEE] rounded-xl px-4 py-3 text-xs text-[#202124] focus:outline-none focus:border-[#E63946]"
+                  placeholder="name@saveetha.ac.in"
+                  className="w-full h-10 bg-white border border-[#EEEEEE] rounded-xl px-3.5 text-xs text-[#202124] placeholder-[#AAAAAA] focus:outline-none focus:border-[#E63946] transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#202124] mb-1.5 uppercase tracking-wider">
-                  Password
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-semibold text-[#202124]">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setResetSent(false);
+                      setResetEmail(email);
+                      setForgotMode(true);
+                    }}
+                    className="text-[11px] font-medium text-[#E63946] hover:underline cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-[#FAFAFA] border border-[#EEEEEE] rounded-xl px-4 py-3 text-xs text-[#202124] focus:outline-none focus:border-[#E63946]"
+                    placeholder="Enter your password"
+                    className="w-full h-10 bg-white border border-[#EEEEEE] rounded-xl pl-3.5 pr-10 text-xs text-[#202124] placeholder-[#AAAAAA] focus:outline-none focus:border-[#E63946] transition-colors"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-3.5 text-[#777777]"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#202124] cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
+              <label className="flex items-center gap-2 text-xs text-[#777777] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-[#DDDDDD] text-[#E63946] focus:ring-[#E63946]"
+                />
+                <span>Remember me on this device</span>
+              </label>
+
               <button
                 type="submit"
-                disabled={isAuthLoading}
-                className="w-full flex items-center justify-center gap-2 bg-[#E63946] hover:bg-[#d62839] text-white font-bold py-3.5 px-6 rounded-2xl shadow-lg shadow-[#E63946]/20 transition-all text-xs cursor-pointer disabled:opacity-60"
+                disabled={isBusy}
+                className="w-full h-10.5 rounded-xl bg-[#E63946] hover:bg-[#d62839] text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                <LogIn className="w-4 h-4" />
-                <span>{isAuthLoading ? 'Verifying...' : 'Sign In'}</span>
+                {isBusy ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Signing In...</span>
+                  </>
+                ) : (
+                  <span>Sign In</span>
+                )}
               </button>
             </form>
-          )}
-        </div>
 
-        <p className="text-xs text-[#777777] pt-2">
-          New to IDEA LAB?{' '}
-          <Link to="/join" className="text-[#E63946] font-bold hover:underline">
-            Request to Join
-          </Link>
-        </p>
+            <div className="pt-3 border-t border-[#EEEEEE] text-center">
+              <p className="text-xs text-[#777777]">
+                New to IDEA LAB?{' '}
+                <Link to="/signup" className="text-[#E63946] font-semibold hover:underline">
+                  Create an account
+                </Link>
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-1">
+              <h1 className="text-xl font-bold tracking-tight text-[#202124]">
+                Reset your password
+              </h1>
+              <p className="text-xs text-[#777777]">
+                Enter your registered college email and we'll send a password reset link.
+              </p>
+            </div>
+
+            {error && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {resetSent && (
+              <div className="p-3 rounded-xl bg-[#32B878]/10 border border-[#32B878]/30 text-[#1F7A4D] text-xs font-medium flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>Password reset link sent to {resetEmail.trim().toLowerCase()}. Check your inbox.</span>
+              </div>
+            )}
+
+            <form onSubmit={handlePasswordReset} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-semibold text-[#202124] mb-1">
+                  College Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  placeholder="name@saveetha.ac.in"
+                  className="w-full h-10 bg-white border border-[#EEEEEE] rounded-xl px-3.5 text-xs text-[#202124] placeholder-[#AAAAAA] focus:outline-none focus:border-[#E63946] transition-colors"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isResetting}
+                className="w-full h-10.5 rounded-xl bg-[#E63946] hover:bg-[#d62839] text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-60"
+              >
+                {isResetting ? 'Sending Reset Link...' : 'Send Reset Link'}
+              </button>
+            </form>
+
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setForgotMode(false);
+                }}
+                className="text-xs font-medium text-[#777777] hover:text-[#202124] cursor-pointer"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
-      <div className="mt-8 text-xs text-[#777777]">
-        Saveetha Engineering College • IDEA Lab
-      </div>
-
-      <GoogleSignInModal
-        isOpen={showGoogleModal}
-        onClose={() => setShowGoogleModal(false)}
-        onSelectAccount={handleSelectGoogleAccount}
-        isSubmitting={isAuthLoading}
-      />
+      <p className="text-center text-[11px] text-[#777777]">
+        Saveetha Engineering College • IDEA LAB
+      </p>
     </div>
   );
 };

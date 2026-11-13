@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny all by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'sanjaykumarbjc@gmail.com'
+      );
+    }
+
+    function isValidStudentCommon(data, uid) {
+      return data.uid is string
+        && data.uid == uid
+        && isValidId(data.uid)
+        && data.fullName is string
+        && data.fullName.size() >= 2
+        && data.fullName.size() <= 100
+        && data.email is string
+        && data.email.size() >= 5
+        && data.email.size() <= 160
+        && data.registrationNumber is string
+        && data.registrationNumber.size() >= 4
+        && data.registrationNumber.size() <= 32
+        && data.registrationNumber.matches('^[A-Za-z0-9\\-]+$')
+        && data.department is string
+        && data.department.size() >= 2
+        && data.department.size() <= 80
+        && data.academicYear is string
+        && data.academicYear.size() >= 2
+        && data.academicYear.size() <= 24
+        && data.membershipStatus in ['pending', 'approved', 'rejected']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidStudentCreate(data, uid) {
+      return data.keys().hasAll([
+          'uid',
+          'fullName',
+          'email',
+          'registrationNumber',
+          'department',
+          'academicYear',
+          'membershipStatus',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'fullName',
+          'email',
+          'registrationNumber',
+          'department',
+          'academicYear',
+          'membershipStatus',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isValidStudentCommon(data, uid)
+        && data.uid == request.auth.uid
+        && data.email == request.auth.token.email
+        && data.membershipStatus == 'pending'
+        && data.createdAt == request.time
+        && (!('updatedAt' in data) || data.updatedAt == request.time);
+    }
+
+    function isValidStudentUpdate(data, uid) {
+      return data.keys().hasAll([
+          'uid',
+          'fullName',
+          'email',
+          'registrationNumber',
+          'department',
+          'academicYear',
+          'membershipStatus',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'fullName',
+          'email',
+          'registrationNumber',
+          'department',
+          'academicYear',
+          'membershipStatus',
+          'createdAt',
+          'updatedAt',
+          'approvedAt',
+          'approvedBy',
+          'rejectionReason'
+        ])
+        && isValidStudentCommon(data, uid)
+        && data.uid == existing().uid
+        && data.email == existing().email
+        && data.createdAt == existing().createdAt
+        && (!('updatedAt' in data) || data.updatedAt == request.time)
+        && (!('approvedBy' in data) || (data.approvedBy is string && data.approvedBy.size() >= 1 && data.approvedBy.size() <= 128))
+        && (!('approvedAt' in data) || data.approvedAt is timestamp)
+        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500));
+    }
+
+    match /students/{uid} {
+      // PII protection: only the owning student or an authorized admin can read a student document
+      allow get: if isValidId(uid) && (isOwner(uid) || isAdmin());
+
+      // Query enforcer: never call get()/exists() in allow list; enforce ownership or verified bootstrapped admin
+      allow list: if isSignedIn() && (
+        resource.data.uid == request.auth.uid ||
+        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+      );
+
+      // Students can create only their own initial PENDING request after verifying their email
+      allow create: if isValidId(uid)
+        && isOwner(uid)
+        && isEmailVerified()
+        && isValidStudentCreate(incoming(), uid);
+
+      // Tiered updates:
+      // - Authorized admins may approve/reject or update metadata
+      // - Approved & verified students may update ONLY safe profile fields (never membershipStatus/approvedAt/approvedBy)
+      allow update: if isValidId(uid)
+        && isValidStudentUpdate(incoming(), uid)
+        && (
+          isAdmin() ||
+          (
+            isOwner(uid)
+            && isEmailVerified()
+            && existing().membershipStatus == 'approved'
+            && incoming().membershipStatus == existing().membershipStatus
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'fullName',
+              'department',
+              'academicYear',
+              'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isValidId(uid) && isAdmin();
+    }
+
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && isOwner(uid);
+      allow list, write: if false;
+    }
+  }
+}
