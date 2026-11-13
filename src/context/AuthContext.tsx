@@ -125,30 +125,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubscribeProfile = null;
       }
 
-      setUser(firebaseUser);
-      setEmailVerified(Boolean(firebaseUser?.emailVerified));
-      setIsAuthReady(true);
-
       if (!firebaseUser) {
+        setUser(null);
+        setEmailVerified(false);
+        setIsAuthReady(true);
         setStudentProfile(null);
         setIsProfileLoaded(true);
         return;
       }
 
+      setUser(firebaseUser);
+      setEmailVerified(Boolean(firebaseUser.emailVerified));
+      setIsAuthReady(true);
+
       setIsProfileLoaded(false);
-      unsubscribeProfile = subscribeToStudentProfile(
-        firebaseUser.uid,
-        (profileDoc) => {
-          if (!active) return;
-          setStudentProfile(profileDoc);
-          setIsProfileLoaded(true);
-        },
-        (err) => {
-          if (!active) return;
-          setAuthError(err.message);
-          setIsProfileLoaded(true);
+      void (async () => {
+        if (firebaseUser.emailVerified) {
+          try {
+            const tokenResult = await firebaseUser.getIdTokenResult();
+            if (!tokenResult.claims.email_verified) {
+              await firebaseUser.getIdToken(true);
+            }
+          } catch {
+            // Continue subscribing even if token refresh fails transiently
+          }
         }
-      );
+        if (!active || auth.currentUser?.uid !== firebaseUser.uid) return;
+        unsubscribeProfile = subscribeToStudentProfile(
+          firebaseUser.uid,
+          (profileDoc) => {
+            if (!active) return;
+            setStudentProfile(profileDoc);
+            setIsProfileLoaded(true);
+          },
+          (err) => {
+            if (!active) return;
+            setAuthError(err.message);
+            setIsProfileLoaded(true);
+          }
+        );
+      })();
     });
 
     return () => {
@@ -201,6 +217,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setStudentProfile(null);
       setIsProfileLoaded(true);
       return 'unverified_email';
+    }
+
+    const tokenResult = await freshUser.getIdTokenResult();
+    if (!tokenResult.claims.email_verified) {
+      await freshUser.getIdToken(true);
     }
 
     const profileDoc = await getStudentProfile(freshUser.uid);

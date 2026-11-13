@@ -3,8 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, AlertCircle, Check } from 'lucide-react';
 import { Logo } from '../../components/navigation/Logo';
 import { useAuth } from '../../context/AuthContext';
+import { isValidEmailAddress } from '../../firebase/authService';
 
-const SAVEETHA_EMAIL_REGEX = /^[^\s@]+@saveetha\.ac\.in$/i;
 const REG_NUMBER_REGEX = /^[A-Za-z0-9-]{4,32}$/;
 
 function evaluatePasswordStrength(password: string): {
@@ -59,8 +59,8 @@ export const SignupPage: React.FC = () => {
     if (fullName.trim().length < 2) {
       errors.fullName = 'Enter your full name (at least 2 characters).';
     }
-    if (!SAVEETHA_EMAIL_REGEX.test(email.trim())) {
-      errors.email = 'Use your official Saveetha college email (@saveetha.ac.in).';
+    if (!isValidEmailAddress(email)) {
+      errors.email = 'Enter a valid email address (e.g., Gmail, Outlook, Yahoo, or college email).';
     }
     if (!REG_NUMBER_REGEX.test(registrationNumber.trim())) {
       errors.registrationNumber = 'Enter a valid registration number (4–32 letters/numbers).';
@@ -126,7 +126,7 @@ export const SignupPage: React.FC = () => {
             Create your account
           </h1>
           <p className="text-xs text-[#777777]">
-            Register with your Saveetha Engineering College email to apply for IDEA LAB.
+            Register with any valid email address to verify your identity and apply for IDEA LAB.
           </p>
         </div>
 
@@ -159,7 +159,7 @@ export const SignupPage: React.FC = () => {
 
           <div>
             <label className="block text-[11px] font-semibold text-[#202124] mb-1">
-              College Email Address
+              Email Address
             </label>
             <input
               type="email"
@@ -168,7 +168,7 @@ export const SignupPage: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onBlur={() => markTouched('email')}
-              placeholder="name@saveetha.ac.in"
+              placeholder="you@example.com"
               className="w-full h-10 bg-white border border-[#EEEEEE] rounded-xl px-3.5 text-xs text-[#202124] placeholder-[#AAAAAA] focus:outline-none focus:border-[#E63946] transition-colors"
             />
             {touched.email && fieldErrors.email && (

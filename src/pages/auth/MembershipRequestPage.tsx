@@ -128,7 +128,7 @@ export const MembershipRequestPage: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div>
             <label className="block text-[11px] font-semibold text-[#202124] mb-1">
-              Verified College Email
+              Verified Email
             </label>
             <input
               type="email"

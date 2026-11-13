@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from './config';
 import { handleFirestoreError, OperationType } from './errorHandling';
-import { clearSignupDraft } from './authService';
+import { assertValidEmailAddress, clearSignupDraft } from './authService';
 import { MembershipRequestInput, StudentProfileDoc } from '../types/auth';
 
 const STUDENTS_COLLECTION = 'students';
@@ -90,12 +90,19 @@ export async function submitStudentMembershipRequest(
   const refreshedUser = auth.currentUser || currentUser;
 
   if (!refreshedUser.emailVerified) {
-    throw new Error('Please verify your college email address before submitting your membership request.');
+    throw new Error('Please verify your email address before submitting your membership request.');
+  }
+
+  const tokenResult = await refreshedUser.getIdTokenResult();
+  if (!tokenResult.claims.email_verified) {
+    await refreshedUser.getIdToken(true);
   }
 
   if (!refreshedUser.email) {
     throw new Error('Verified email address is missing on your account.');
   }
+
+  const verifiedEmail = assertValidEmailAddress(refreshedUser.email);
 
   const sanitized = validateMembershipInput(rawInput);
   const docPath = `${STUDENTS_COLLECTION}/${refreshedUser.uid}`;
@@ -111,7 +118,7 @@ export async function submitStudentMembershipRequest(
     await setDoc(docRef, {
       uid: refreshedUser.uid,
       fullName: sanitized.fullName,
-      email: refreshedUser.email,
+      email: verifiedEmail,
       registrationNumber: sanitized.registrationNumber,
       department: sanitized.department,
       academicYear: sanitized.academicYear,

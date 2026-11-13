@@ -23,7 +23,8 @@
           "format": "email",
           "minLength": 5,
           "maxLength": 160,
-          "description": "Verified Saveetha college email address."
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "description": "Verified student email address."
         },
         "registrationNumber": {
           "type": "string",

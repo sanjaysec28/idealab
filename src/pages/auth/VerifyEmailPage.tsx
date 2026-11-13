@@ -110,10 +110,10 @@ export const VerifyEmailPage: React.FC = () => {
 
         <div className="space-y-1.5">
           <h1 className="text-xl font-bold tracking-tight text-[#202124]">
-            Verify your college email
+            Verify your email
           </h1>
           <p className="text-xs text-[#777777] leading-relaxed">
-            We sent a verification link to your Saveetha email. Verify your email before submitting your IDEA LAB membership request.
+            We sent a verification link to your email address. Verify your email before submitting your IDEA LAB membership request.
           </p>
         </div>
 

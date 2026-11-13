@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Logo } from '../../components/navigation/Logo';
 import { useAuth } from '../../context/AuthContext';
+import { isValidEmailAddress } from '../../firebase/authService';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -27,7 +28,12 @@ export const LoginPage: React.FC = () => {
     setError(null);
 
     if (!email.trim() || !password) {
-      setError('Enter both your college email and password.');
+      setError('Enter both your email and password.');
+      return;
+    }
+
+    if (!isValidEmailAddress(email)) {
+      setError('Please enter a valid email address.');
       return;
     }
 
@@ -50,7 +56,12 @@ export const LoginPage: React.FC = () => {
     setResetSent(false);
 
     if (!resetEmail.trim()) {
-      setError('Enter your registered college email address.');
+      setError('Enter your registered email address.');
+      return;
+    }
+
+    if (!isValidEmailAddress(resetEmail)) {
+      setError('Please enter a valid email address.');
       return;
     }
 
@@ -88,7 +99,7 @@ export const LoginPage: React.FC = () => {
                 Sign in to IDEA LAB
               </h1>
               <p className="text-xs text-[#777777]">
-                Enter your Saveetha college credentials to continue.
+                Enter your registered email and password to continue.
               </p>
             </div>
 
@@ -102,7 +113,7 @@ export const LoginPage: React.FC = () => {
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-semibold text-[#202124] mb-1">
-                  College Email Address
+                  Email Address
                 </label>
                 <input
                   type="email"
@@ -110,7 +121,7 @@ export const LoginPage: React.FC = () => {
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@saveetha.ac.in"
+                  placeholder="you@example.com"
                   className="w-full h-10 bg-white border border-[#EEEEEE] rounded-xl px-3.5 text-xs text-[#202124] placeholder-[#AAAAAA] focus:outline-none focus:border-[#E63946] transition-colors"
                 />
               </div>
@@ -196,7 +207,7 @@ export const LoginPage: React.FC = () => {
                 Reset your password
               </h1>
               <p className="text-xs text-[#777777]">
-                Enter your registered college email and we'll send a password reset link.
+                Enter your registered email and we'll send a password reset link.
               </p>
             </div>
 
@@ -217,14 +228,14 @@ export const LoginPage: React.FC = () => {
             <form onSubmit={handlePasswordReset} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-semibold text-[#202124] mb-1">
-                  College Email Address
+                  Email Address
                 </label>
                 <input
                   type="email"
                   required
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
-                  placeholder="name@saveetha.ac.in"
+                  placeholder="you@example.com"
                   className="w-full h-10 bg-white border border-[#EEEEEE] rounded-xl px-3.5 text-xs text-[#202124] placeholder-[#AAAAAA] focus:outline-none focus:border-[#E63946] transition-colors"
                 />
               </div>

@@ -30,6 +30,17 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isValidEmail(email) {
+      return email is string
+        && email.size() >= 5
+        && email.size() <= 160
+        && email.matches('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$');
+    }
+
+    function isVerifiedStudent() {
+      return isEmailVerified() && isValidEmail(request.auth.token.email);
+    }
+
     function isAdmin() {
       return isEmailVerified() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
@@ -44,9 +55,7 @@ service cloud.firestore {
         && data.fullName is string
         && data.fullName.size() >= 2
         && data.fullName.size() <= 100
-        && data.email is string
-        && data.email.size() >= 5
-        && data.email.size() <= 160
+        && isValidEmail(data.email)
         && data.registrationNumber is string
         && data.registrationNumber.size() >= 4
         && data.registrationNumber.size() <= 32
@@ -85,7 +94,7 @@ service cloud.firestore {
         ])
         && isValidStudentCommon(data, uid)
         && data.uid == request.auth.uid
-        && data.email == request.auth.token.email
+        && data.email.lower() == request.auth.token.email.lower()
         && data.membershipStatus == 'pending'
         && data.createdAt == request.time
         && (!('updatedAt' in data) || data.updatedAt == request.time);
@@ -139,7 +148,7 @@ service cloud.firestore {
       // Students can create only their own initial PENDING request after verifying their email
       allow create: if isValidId(uid)
         && isOwner(uid)
-        && isEmailVerified()
+        && isVerifiedStudent()
         && isValidStudentCreate(incoming(), uid);
 
       // Tiered updates:
@@ -151,7 +160,7 @@ service cloud.firestore {
           isAdmin() ||
           (
             isOwner(uid)
-            && isEmailVerified()
+            && isVerifiedStudent()
             && existing().membershipStatus == 'approved'
             && incoming().membershipStatus == existing().membershipStatus
             && incoming().updatedAt == request.time
