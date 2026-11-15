@@ -122,6 +122,9 @@ export interface StudentAvailabilityDoc {
   avatarPresetId?: string;
   skills?: string[];
   emailVerified?: boolean;
+  profileComplete?: boolean;
+  phoneNumber?: string;
+  whatsappNumber?: string;
   updatedAt?: Timestamp;
 }
 

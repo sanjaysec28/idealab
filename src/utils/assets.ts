@@ -11,6 +11,8 @@ export const ASSETS = {
   },
   ideaLabLogo: '/images/logo.png',
   splashScreen: '/images/logo.png',
+  splashSecLogo: '/images/spl-sec.png',
+  splashIdeaLogo: '/images/spl-ide.png',
   welcomeHero: '/images/desk-card.png',
   welcomeHeroMobile: '/images/mob-card.png',
   onboardingExplore: '/images/desk-card.png',

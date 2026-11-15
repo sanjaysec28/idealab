@@ -3,16 +3,14 @@ import React, {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react';
 import { useAuth } from './AuthContext';
 
-const NORMAL_SPLASH_DURATION_MS = 2000;
-const REDUCED_MOTION_SPLASH_MS = 450;
-const MAX_SPLASH_DURATION_MS = 3000;
-const FADE_OUT_MS = 320;
+export const SPLASH_EXIT_START_MS = 4500;
+export const SPLASH_FADE_OUT_MS = 500;
+export const SPLASH_TOTAL_DURATION_MS = SPLASH_EXIT_START_MS + SPLASH_FADE_OUT_MS; // 5000ms
 
 interface LoadingContextType {
   isSplashActive: boolean;
@@ -28,44 +26,33 @@ interface LoadingContextType {
 
 const LoadingContext = createContext<LoadingContextType | undefined>(undefined);
 
-function prefersReducedMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
 export const LoadingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { authState, authError } = useAuth();
 
   const [isSplashActive, setIsSplashActive] = useState<boolean>(true);
   const [isSplashVisible, setIsSplashVisible] = useState<boolean>(true);
   const [hasCompletedInitialSplash, setHasCompletedInitialSplash] = useState<boolean>(false);
-  const [minElapsed, setMinElapsed] = useState<boolean>(false);
-  const [maxTimedOut, setMaxTimedOut] = useState<boolean>(false);
+  const [sequenceExitReady, setSequenceExitReady] = useState<boolean>(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [refreshCount, setRefreshCount] = useState<number>(0);
 
   const closingRef = useRef<boolean>(false);
-  const reducedMotion = useMemo(() => prefersReducedMotion(), []);
+  const fadeTimerRef = useRef<number | null>(null);
 
-  // Minimum branded display window (~2s normal, shorter for reduced-motion) + hard 3s cap
+  // Trigger Phase 3 exit at exact 4.5s so total splash duration completes at 5.0s
   useEffect(() => {
-    const minDelay = reducedMotion ? REDUCED_MOTION_SPLASH_MS : NORMAL_SPLASH_DURATION_MS;
-
-    const minTimer = window.setTimeout(() => {
-      setMinElapsed(true);
-    }, minDelay);
-
-    const maxTimer = window.setTimeout(() => {
-      setMaxTimedOut(true);
-    }, MAX_SPLASH_DURATION_MS);
+    const exitTimer = window.setTimeout(() => {
+      setSequenceExitReady(true);
+    }, SPLASH_EXIT_START_MS);
 
     return () => {
-      window.clearTimeout(minTimer);
-      window.clearTimeout(maxTimer);
+      window.clearTimeout(exitTimer);
+      if (fadeTimerRef.current !== null) {
+        window.clearTimeout(fadeTimerRef.current);
+        fadeTimerRef.current = null;
+      }
     };
-  }, [reducedMotion]);
+  }, []);
 
   const finishSplash = useCallback(() => {
     if (closingRef.current) return;
@@ -79,28 +66,23 @@ export const LoadingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setIsSplashVisible(false);
 
-    const fadeDelay = reducedMotion ? 0 : FADE_OUT_MS;
-    window.setTimeout(() => {
+    fadeTimerRef.current = window.setTimeout(() => {
+      fadeTimerRef.current = null;
       setIsSplashActive(false);
       setHasCompletedInitialSplash(true);
-    }, fadeDelay);
-  }, [authError, authState, reducedMotion]);
+    }, SPLASH_FADE_OUT_MS);
+  }, [authError, authState]);
 
-  // Complete splash once app initialization + min duration are satisfied, or at 3s failsafe
   useEffect(() => {
-    if (closingRef.current) return;
-
-    const readyNormally = minElapsed && authState !== 'loading';
-    if (readyNormally || maxTimedOut) {
-      finishSplash();
-    }
-  }, [minElapsed, authState, maxTimedOut, finishSplash]);
+    if (!sequenceExitReady || closingRef.current) return;
+    finishSplash();
+  }, [sequenceExitReady, finishSplash]);
 
   const dismissSplashIfReady = useCallback(() => {
-    if (authState !== 'loading') {
+    if (authState !== 'loading' && sequenceExitReady) {
       finishSplash();
     }
-  }, [authState, finishSplash]);
+  }, [authState, finishSplash, sequenceExitReady]);
 
   const clearInitError = useCallback(() => {
     setInitError(null);

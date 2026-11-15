@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLoading } from '../../context/LoadingContext';
-import { IdeaLabLogo } from '../../components/shared/IdeaLabLogo';
 
 export const SplashScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -29,10 +28,8 @@ export const SplashScreen: React.FC = () => {
 
   return (
     <div
-      className="min-h-[100dvh] w-full idea-splash-backdrop flex items-center justify-center p-6"
+      className="min-h-[100dvh] w-full idea-splash-backdrop"
       aria-hidden="true"
-    >
-      <IdeaLabLogo variant="splash" />
-    </div>
+    />
   );
 };

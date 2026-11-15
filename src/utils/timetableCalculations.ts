@@ -133,8 +133,319 @@ const JS_DAY_TO_WEEKDAY_ID: Record<number, WeekdayId | null> = {
   6: 'sat',
 };
 
+const SHORT_WEEKDAY_TO_ID: Record<string, WeekdayId | null> = {
+  Sun: null,
+  Mon: 'mon',
+  Tue: 'tue',
+  Wed: 'wed',
+  Thu: 'thu',
+  Fri: 'fri',
+  Sat: 'sat',
+};
+
+export interface KolkataTimeContext {
+  weekdayId: WeekdayId | null;
+  weekdayLabel: string;
+  weekdayShort: string;
+  minutesSinceMidnight: number;
+  formattedTimeIst: string;
+  dateKey: string;
+}
+
+export function getKolkataTimeContext(date: Date = new Date()): KolkataTimeContext {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'short',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(date);
+
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+    const weekdayShortRaw = getPart('weekday');
+    const hourRaw = Number.parseInt(getPart('hour'), 10);
+    const minuteRaw = Number.parseInt(getPart('minute'), 10);
+    const hour = Number.isFinite(hourRaw) ? (hourRaw === 24 ? 0 : hourRaw) : date.getHours();
+    const minute = Number.isFinite(minuteRaw) ? minuteRaw : date.getMinutes();
+
+    const weekdayId =
+      weekdayShortRaw in SHORT_WEEKDAY_TO_ID
+        ? SHORT_WEEKDAY_TO_ID[weekdayShortRaw]
+        : (JS_DAY_TO_WEEKDAY_ID[date.getDay()] ?? null);
+
+    const weekdayObj = weekdayId ? WEEKDAYS.find((w) => w.id === weekdayId) : null;
+    const weekdayLabel = weekdayObj ? weekdayObj.label : 'Sunday';
+    const weekdayShort = weekdayObj ? weekdayObj.shortLabel : 'Sun';
+
+    const formattedTimeIst = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date);
+
+    const dateKey = `${getPart('year')}-${getPart('month')}-${getPart('day')}`;
+
+    return {
+      weekdayId,
+      weekdayLabel,
+      weekdayShort,
+      minutesSinceMidnight: hour * 60 + minute,
+      formattedTimeIst: `${formattedTimeIst} IST`,
+      dateKey,
+    };
+  } catch {
+    const weekdayId = JS_DAY_TO_WEEKDAY_ID[date.getDay()] ?? null;
+    const weekdayObj = weekdayId ? WEEKDAYS.find((w) => w.id === weekdayId) : null;
+    return {
+      weekdayId,
+      weekdayLabel: weekdayObj ? weekdayObj.label : 'Sunday',
+      weekdayShort: weekdayObj ? weekdayObj.shortLabel : 'Sun',
+      minutesSinceMidnight: date.getHours() * 60 + date.getMinutes(),
+      formattedTimeIst: date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      dateKey: date.toISOString().slice(0, 10),
+    };
+  }
+}
+
+export type CampusPeriodKind =
+  | 'active_period'
+  | 'break'
+  | 'lunch'
+  | 'before_hours'
+  | 'after_hours'
+  | 'weekend'
+  | 'holiday';
+
+export interface CurrentPeriodStatus {
+  kind: CampusPeriodKind;
+  weekdayId: WeekdayId | null;
+  weekdayLabel: string;
+  weekdayShort: string;
+  activeSlot: TimeSlotOption | null;
+  nextSlot: TimeSlotOption | null;
+  periodLabel: string;
+  statusDetail: string;
+  formattedTimeIst: string;
+}
+
+const SLOT_TIME_RANGES: Array<{
+  slotId: TimeSlotId;
+  startMin: number;
+  endMin: number;
+}> = [
+  { slotId: 'slot-1', startMin: 8 * 60, endMin: 9 * 60 + 30 }, // 8:00 AM - 9:30 AM
+  { slotId: 'slot-2', startMin: 9 * 60 + 45, endMin: 11 * 60 + 15 }, // 9:45 AM - 11:15 AM
+  { slotId: 'slot-3', startMin: 13 * 60 + 15, endMin: 14 * 60 + 45 }, // 1:15 PM - 2:45 PM
+  { slotId: 'slot-4', startMin: 15 * 60, endMin: 16 * 60 + 30 }, // 3:00 PM - 4:30 PM
+];
+
+// Explicit Saveetha / Indian public holiday dates (YYYY-MM-DD in Asia/Kolkata) can be registered here
+const CAMPUS_HOLIDAY_DATES = new Set<string>([]);
+
+export function getCurrentPeriodStatus(date: Date = new Date()): CurrentPeriodStatus {
+  const ctx = getKolkataTimeContext(date);
+  const slot1 = TIME_SLOTS[0];
+  const slot2 = TIME_SLOTS[1];
+  const slot3 = TIME_SLOTS[2];
+  const slot4 = TIME_SLOTS[3];
+
+  if (CAMPUS_HOLIDAY_DATES.has(ctx.dateKey)) {
+    return {
+      kind: 'holiday',
+      weekdayId: ctx.weekdayId,
+      weekdayLabel: ctx.weekdayLabel,
+      weekdayShort: ctx.weekdayShort,
+      activeSlot: null,
+      nextSlot: null,
+      periodLabel: 'Campus Holiday',
+      statusDetail: 'No scheduled classes today',
+      formattedTimeIst: ctx.formattedTimeIst,
+    };
+  }
+
+  if (!ctx.weekdayId) {
+    return {
+      kind: 'weekend',
+      weekdayId: null,
+      weekdayLabel: 'Sunday',
+      weekdayShort: 'Sun',
+      activeSlot: null,
+      nextSlot: null,
+      periodLabel: 'No Classes Scheduled',
+      statusDetail: 'Sunday · Campus Closed',
+      formattedTimeIst: ctx.formattedTimeIst,
+    };
+  }
+
+  const m = ctx.minutesSinceMidnight;
+
+  for (const range of SLOT_TIME_RANGES) {
+    if (m >= range.startMin && m < range.endMin) {
+      const slot = TIME_SLOTS.find((s) => s.id === range.slotId) ?? null;
+      return {
+        kind: 'active_period',
+        weekdayId: ctx.weekdayId,
+        weekdayLabel: ctx.weekdayLabel,
+        weekdayShort: ctx.weekdayShort,
+        activeSlot: slot,
+        nextSlot: null,
+        periodLabel: slot?.label ?? 'Active Period',
+        statusDetail: `${ctx.weekdayLabel} · ${slot?.label ?? ''}`,
+        formattedTimeIst: ctx.formattedTimeIst,
+      };
+    }
+  }
+
+  if (m < 8 * 60) {
+    return {
+      kind: 'before_hours',
+      weekdayId: ctx.weekdayId,
+      weekdayLabel: ctx.weekdayLabel,
+      weekdayShort: ctx.weekdayShort,
+      activeSlot: null,
+      nextSlot: slot1,
+      periodLabel: `Before Hours · First: ${slot1.label}`,
+      statusDetail: `${ctx.weekdayLabel} · First period at 8:00 AM`,
+      formattedTimeIst: ctx.formattedTimeIst,
+    };
+  }
+
+  if (m >= 9 * 60 + 30 && m < 9 * 60 + 45) {
+    return {
+      kind: 'break',
+      weekdayId: ctx.weekdayId,
+      weekdayLabel: ctx.weekdayLabel,
+      weekdayShort: ctx.weekdayShort,
+      activeSlot: null,
+      nextSlot: slot2,
+      periodLabel: `Short Break · Next: ${slot2.label}`,
+      statusDetail: `${ctx.weekdayLabel} · Morning break (9:30 – 9:45 AM)`,
+      formattedTimeIst: ctx.formattedTimeIst,
+    };
+  }
+
+  if (m >= 11 * 60 + 15 && m < 13 * 60 + 15) {
+    return {
+      kind: 'lunch',
+      weekdayId: ctx.weekdayId,
+      weekdayLabel: ctx.weekdayLabel,
+      weekdayShort: ctx.weekdayShort,
+      activeSlot: null,
+      nextSlot: slot3,
+      periodLabel: `Lunch Break · Next: ${slot3.label}`,
+      statusDetail: `${ctx.weekdayLabel} · Lunch break (11:15 AM – 1:15 PM)`,
+      formattedTimeIst: ctx.formattedTimeIst,
+    };
+  }
+
+  if (m >= 14 * 60 + 45 && m < 15 * 60) {
+    return {
+      kind: 'break',
+      weekdayId: ctx.weekdayId,
+      weekdayLabel: ctx.weekdayLabel,
+      weekdayShort: ctx.weekdayShort,
+      activeSlot: null,
+      nextSlot: slot4,
+      periodLabel: `Short Break · Next: ${slot4.label}`,
+      statusDetail: `${ctx.weekdayLabel} · Afternoon break (2:45 – 3:00 PM)`,
+      formattedTimeIst: ctx.formattedTimeIst,
+    };
+  }
+
+  return {
+    kind: 'after_hours',
+    weekdayId: ctx.weekdayId,
+    weekdayLabel: ctx.weekdayLabel,
+    weekdayShort: ctx.weekdayShort,
+    activeSlot: null,
+    nextSlot: null,
+    periodLabel: 'Classes Ended for Today',
+    statusDetail: `${ctx.weekdayLabel} · After 4:30 PM`,
+    formattedTimeIst: ctx.formattedTimeIst,
+  };
+}
+
+export const WHATSAPP_COLLABORATION_GREETING =
+  "Hi! I found you on the IDEA LAB availability page. You're free during this period. Would you like to collaborate?";
+
+export function sanitizePhoneForTel(rawPhone: string | undefined): string | null {
+  if (!rawPhone || typeof rawPhone !== 'string') return null;
+  const trimmed = rawPhone.trim();
+  if (!trimmed) return null;
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return null;
+  return `tel:${hasPlus ? '+' : ''}${digits}`;
+}
+
+export function sanitizePhoneForWhatsApp(rawPhone: string | undefined): string | null {
+  if (!rawPhone || typeof rawPhone !== 'string') return null;
+  const trimmed = rawPhone.trim();
+  if (!trimmed) return null;
+  const hasPlus = trimmed.startsWith('+');
+  let digits = trimmed.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return null;
+
+  if (!hasPlus) {
+    if (digits.length === 10 && /^[6-9]/.test(digits)) {
+      digits = `91${digits}`;
+    } else if (digits.length === 11 && /^0[6-9]/.test(digits)) {
+      digits = `91${digits.slice(1)}`;
+    }
+  }
+
+  return `https://wa.me/${digits}?text=${encodeURIComponent(WHATSAPP_COLLABORATION_GREETING)}`;
+}
+
+export function isStudentAvailabilityQualified(
+  doc: StudentAvailabilityDoc
+): boolean {
+  if (!doc || !doc.uid) return false;
+  if (doc.emailVerified === false) return false;
+  if (doc.isOptedIn !== true) return false;
+  if (doc.hasSubmittedTimetable !== true) return false;
+  if (typeof doc.totalFreePeriods !== 'number' || doc.totalFreePeriods <= 0) return false;
+  if (!Array.isArray(doc.freeSlots) || doc.freeSlots.length === 0) return false;
+
+  const hasName = typeof doc.fullName === 'string' && doc.fullName.trim().length >= 2;
+  const hasDept = typeof doc.department === 'string' && doc.department.trim().length >= 2;
+  const hasYear = typeof doc.academicYear === 'string' && doc.academicYear.trim().length >= 2;
+
+  if (doc.profileComplete === false) return false;
+  return hasName && hasDept && hasYear;
+}
+
+export function getStudentsAvailableForDayAndSlot(
+  students: StudentAvailabilityDoc[],
+  dayId: WeekdayId,
+  slotId: TimeSlotId
+): StudentAvailabilityDoc[] {
+  const byUid = new Map<string, StudentAvailabilityDoc>();
+
+  for (const student of students) {
+    if (!isStudentAvailabilityQualified(student)) continue;
+    if (byUid.has(student.uid)) continue;
+
+    const isFreeInPeriod = student.freeSlots.some(
+      (entry) => entry.day === dayId && entry.slotId === slotId
+    );
+    if (isFreeInPeriod) {
+      byUid.set(student.uid, student);
+    }
+  }
+
+  return Array.from(byUid.values()).sort((a, b) =>
+    (a.fullName || '').localeCompare(b.fullName || '')
+  );
+}
+
 export function getCurrentCampusWeekdayId(date: Date = new Date()): WeekdayId | null {
-  return JS_DAY_TO_WEEKDAY_ID[date.getDay()] ?? null;
+  return getKolkataTimeContext(date).weekdayId;
 }
 
 export function getFreeSlotsForDay(

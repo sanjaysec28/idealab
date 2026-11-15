@@ -92,6 +92,11 @@
           "maxLength": 32,
           "description": "Optional student contact phone number."
         },
+        "whatsappNumber": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Optional student WhatsApp number if different from phoneNumber."
+        },
         "skills": {
           "type": "array",
           "maxItems": 25,
@@ -317,6 +322,17 @@
         },
         "emailVerified": {
           "type": "boolean"
+        },
+        "profileComplete": {
+          "type": "boolean"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "whatsappNumber": {
+          "type": "string",
+          "maxLength": 32
         },
         "updatedAt": {
           "type": "string",

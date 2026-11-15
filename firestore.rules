@@ -60,6 +60,14 @@ service cloud.firestore {
       return !(field in data) || data[field] is bool;
     }
 
+    function isOptionalPhoneNumber(data, field) {
+      return !(field in data) || (
+        data[field] is string
+        && data[field].size() <= 32
+        && (data[field].size() == 0 || data[field].matches('^[0-9+\\-\\s()]{7,24}$'))
+      );
+    }
+
     function isOptionalStringList(data, field, maxItems, maxItemLen) {
       return !(field in data) || (
         data[field] is list
@@ -109,7 +117,8 @@ service cloud.firestore {
         && isOptionalBoundedString(data, 'bannerPresetId', 0, 64)
         && isOptionalBoundedString(data, 'bio', 0, 600)
         && isOptionalBoundedString(data, 'location', 0, 120)
-        && isOptionalBoundedString(data, 'phoneNumber', 0, 32)
+        && isOptionalPhoneNumber(data, 'phoneNumber')
+        && isOptionalPhoneNumber(data, 'whatsappNumber')
         && isOptionalStringList(data, 'skills', 25, 60)
         && isOptionalStringList(data, 'interests', 25, 60)
         && isOptionalSocialLinks(data)
@@ -138,6 +147,7 @@ service cloud.firestore {
           'bio',
           'location',
           'phoneNumber',
+          'whatsappNumber',
           'skills',
           'interests',
           'socialLinks',
@@ -174,6 +184,7 @@ service cloud.firestore {
           'bio',
           'location',
           'phoneNumber',
+          'whatsappNumber',
           'skills',
           'interests',
           'socialLinks',
@@ -208,6 +219,7 @@ service cloud.firestore {
           'bio',
           'location',
           'phoneNumber',
+          'whatsappNumber',
           'skills',
           'interests',
           'socialLinks',
@@ -237,6 +249,7 @@ service cloud.firestore {
           'bio',
           'location',
           'phoneNumber',
+          'whatsappNumber',
           'skills',
           'interests',
           'socialLinks',
@@ -343,6 +356,9 @@ service cloud.firestore {
           'avatarPresetId',
           'skills',
           'emailVerified',
+          'profileComplete',
+          'phoneNumber',
+          'whatsappNumber',
           'updatedAt'
         ])
         && data.uid == uid
@@ -363,6 +379,9 @@ service cloud.firestore {
         && isOptionalBoundedString(data, 'avatarPresetId', 0, 64)
         && isOptionalStringList(data, 'skills', 25, 60)
         && isOptionalBool(data, 'emailVerified')
+        && isOptionalBool(data, 'profileComplete')
+        && isOptionalPhoneNumber(data, 'phoneNumber')
+        && isOptionalPhoneNumber(data, 'whatsappNumber')
         && data.updatedAt == request.time;
     }
 
@@ -617,6 +636,9 @@ service cloud.firestore {
               'avatarPresetId',
               'skills',
               'emailVerified',
+              'profileComplete',
+              'phoneNumber',
+              'whatsappNumber',
               'updatedAt'
             ]) ||
             incoming().timetableVersion >= existing().timetableVersion
@@ -626,7 +648,7 @@ service cloud.firestore {
       }
     }
 
-    // Collection-group read access for opted-in collaboration availability (zero PII fields)
+    // Collection-group read access for verified opted-in collaboration availability
     match /{path=**}/availability/{docId} {
       allow list: if isSignedIn() && (
         resource.data.uid == request.auth.uid ||

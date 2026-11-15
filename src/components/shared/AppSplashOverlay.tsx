@@ -10,7 +10,6 @@ export const AppSplashOverlay: React.FC = () => {
     isSplashVisible,
     initError,
     clearInitError,
-    dismissSplashIfReady,
     withBackgroundRefresh,
   } = useLoading();
   const { refreshStudentData } = useAuth();
@@ -22,9 +21,7 @@ export const AppSplashOverlay: React.FC = () => {
 
   return (
     <>
-      {isSplashActive && (
-        <SplashScreen visible={isSplashVisible} onSkip={dismissSplashIfReady} />
-      )}
+      {isSplashActive && <SplashScreen visible={isSplashVisible} />}
 
       {!isSplashActive && initError && (
         <div

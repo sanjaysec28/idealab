@@ -29,6 +29,7 @@ export interface StudentProfileDoc {
   bio?: string;
   location?: string;
   phoneNumber?: string;
+  whatsappNumber?: string;
   skills?: string[];
   interests?: string[];
   socialLinks?: StudentSocialLinks;

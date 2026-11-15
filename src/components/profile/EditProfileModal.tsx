@@ -14,6 +14,7 @@ interface EditProfileModalProps {
     currentSemester: string;
     location: string;
     phoneNumber: string;
+    whatsappNumber?: string;
     bio: string;
     membershipStatusLabel: string;
   };
@@ -60,6 +61,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   const [currentSemester, setCurrentSemester] = useState(initialValues.currentSemester);
   const [location, setLocation] = useState(initialValues.location);
   const [phoneNumber, setPhoneNumber] = useState(initialValues.phoneNumber);
+  const [whatsappNumber, setWhatsappNumber] = useState(initialValues.whatsappNumber ?? '');
   const [bio, setBio] = useState(initialValues.bio);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -73,6 +75,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     setCurrentSemester(initialValues.currentSemester);
     setLocation(initialValues.location);
     setPhoneNumber(initialValues.phoneNumber);
+    setWhatsappNumber(initialValues.whatsappNumber ?? '');
     setBio(initialValues.bio);
     setError(null);
     setIsSaving(false);
@@ -94,6 +97,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
         currentSemester,
         location,
         phoneNumber,
+        whatsappNumber,
         bio,
       });
       await onSaved();
@@ -290,6 +294,21 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   placeholder="e.g., +91 98765 43210"
+                  className="w-full rounded-xl bg-[#FAF8F5] focus:bg-white border border-[#EAE6E1] focus:border-[#E63946] px-4 py-2.5 text-sm text-[#202020] outline-none transition-colors"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-[#202020] mb-1.5">
+                  WhatsApp Number{' '}
+                  <span className="font-normal text-[#777777]">(Optional, if different from phone)</span>
+                </label>
+                <input
+                  type="tel"
+                  maxLength={24}
+                  value={whatsappNumber}
+                  onChange={(e) => setWhatsappNumber(e.target.value)}
+                  placeholder="Optional, defaults to your phone number"
                   className="w-full rounded-xl bg-[#FAF8F5] focus:bg-white border border-[#EAE6E1] focus:border-[#E63946] px-4 py-2.5 text-sm text-[#202020] outline-none transition-colors"
                 />
               </div>

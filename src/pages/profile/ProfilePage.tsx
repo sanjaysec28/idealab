@@ -79,6 +79,7 @@ export const ProfilePage: React.FC = () => {
   const location =
     studentProfile?.location?.trim() || 'Saveetha Engineering College, Chennai';
   const phoneNumber = studentProfile?.phoneNumber?.trim() || '';
+  const whatsappNumber = studentProfile?.whatsappNumber?.trim() || '';
   const bio = studentProfile?.bio?.trim() || '';
 
   const skills = studentProfile?.skills ?? [];
@@ -451,6 +452,7 @@ export const ProfilePage: React.FC = () => {
           currentSemester,
           location,
           phoneNumber,
+          whatsappNumber,
           bio,
           membershipStatusLabel,
         }}

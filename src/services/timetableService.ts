@@ -27,6 +27,7 @@ import {
 import {
   calculateDerivedAvailability,
   calculateTimetableSummary,
+  isStudentAvailabilityQualified,
 } from '../utils/timetableCalculations';
 import { detectTimetableInternalConflicts } from '../utils/timetableValidation';
 
@@ -171,6 +172,9 @@ export interface AvailabilityPublicMetadataInput {
   photoURL?: string;
   avatarPresetId?: string;
   skills?: string[];
+  phoneNumber?: string;
+  whatsappNumber?: string;
+  profileComplete?: boolean;
 }
 
 function sanitizeAvailabilityPublicMetadata(
@@ -203,12 +207,21 @@ function sanitizeAvailabilityPublicMetadata(
       .filter(Boolean)
       .slice(0, 25);
   }
+  if (typeof input.phoneNumber === 'string') {
+    result.phoneNumber = input.phoneNumber.trim().slice(0, 32);
+  }
+  if (typeof input.whatsappNumber === 'string') {
+    result.whatsappNumber = input.whatsappNumber.trim().slice(0, 32);
+  }
+  if (typeof input.profileComplete === 'boolean') {
+    result.profileComplete = input.profileComplete;
+  }
   return result;
 }
 
 export function subscribeToOptedInAvailability(
-  currentUid: string,
-  onData: (peers: StudentAvailabilityDoc[]) => void,
+  _currentUid: string,
+  onData: (students: StudentAvailabilityDoc[]) => void,
   onError?: (error: Error) => void
 ): () => void {
   const path = 'students/*/availability';
@@ -220,25 +233,17 @@ export function subscribeToOptedInAvailability(
   return onSnapshot(
     q,
     (snapshot) => {
-      const peers: StudentAvailabilityDoc[] = [];
+      const byUid = new Map<string, StudentAvailabilityDoc>();
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as StudentAvailabilityDoc;
-        if (
-          data.uid &&
-          data.uid !== currentUid &&
-          data.isOptedIn === true &&
-          data.hasSubmittedTimetable === true &&
-          typeof data.totalFreePeriods === 'number' &&
-          data.totalFreePeriods > 0 &&
-          Array.isArray(data.freeSlots) &&
-          data.freeSlots.length > 0 &&
-          data.emailVerified !== false
-        ) {
-          peers.push(data);
+        if (isStudentAvailabilityQualified(data) && !byUid.has(data.uid)) {
+          byUid.set(data.uid, data);
         }
       });
-      peers.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-      onData(peers);
+      const students = Array.from(byUid.values()).sort((a, b) =>
+        (a.fullName || '').localeCompare(b.fullName || '')
+      );
+      onData(students);
     },
     (error) => {
       try {
@@ -411,6 +416,11 @@ export async function submitFinalTimetableToFirestore(params: {
     photoURL: existingProfile?.photoURL ?? refreshedUser.photoURL ?? undefined,
     avatarPresetId: existingProfile?.avatarPresetId,
     skills: existingProfile?.skills,
+    phoneNumber: existingProfile?.phoneNumber ?? '',
+    whatsappNumber: existingProfile?.whatsappNumber ?? '',
+    profileComplete: Boolean(
+      safeFullName.length >= 2 && department.length >= 2 && academicYear.length >= 2
+    ),
   });
 
   const batch = writeBatch(db);

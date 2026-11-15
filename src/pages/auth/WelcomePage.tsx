@@ -22,19 +22,17 @@ export const WelcomePage: React.FC = () => {
           <div className="w-full max-w-md mx-auto space-y-3">
             <Link
               to="/signup"
-              className="w-full h-[52px] px-6 rounded-full bg-[#E63946] hover:bg-[#d62839] active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-[#E63946]/25 transition-all flex items-center justify-center"
+              className="w-full h-[52px] px-6 rounded-full bg-[#E63946] hover:bg-[#d62839] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#E63946] text-white font-bold text-sm shadow-md shadow-[#E63946]/25 transition-all flex items-center justify-center"
             >
               <span className="whitespace-nowrap">Get Started</span>
             </Link>
 
-            <div className="pt-1 text-center">
-              <p className="text-xs text-[#777777]">
-                Already have an account?{' '}
-                <Link to="/login" className="text-[#E63946] font-bold hover:underline">
-                  Sign In
-                </Link>
-              </p>
-            </div>
+            <Link
+              to="/login"
+              className="w-full h-[52px] px-6 rounded-full bg-white hover:bg-[#FFF0F1] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#E63946] border border-[#E63946] text-[#202124] font-semibold text-sm transition-all flex items-center justify-center"
+            >
+              <span className="whitespace-nowrap">Sign In</span>
+            </Link>
           </div>
         </div>
       </div>
@@ -72,24 +70,22 @@ export const WelcomePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Primary Get Started CTA & Sign-In Link */}
+          {/* Primary Get Started CTA & Sign In Button */}
           <div className="relative z-10 mt-9 bg-transparent p-0 w-full max-w-[440px] mx-auto shrink-0">
             <div className="w-full space-y-3.5">
               <Link
                 to="/signup"
-                className="w-full h-12 px-6 rounded-full bg-[#E63946] hover:bg-[#d62839] active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-[#E63946]/25 transition-all flex items-center justify-center"
+                className="w-full h-12 px-6 rounded-full bg-[#E63946] hover:bg-[#d62839] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#E63946] text-white font-bold text-sm shadow-md shadow-[#E63946]/25 transition-all flex items-center justify-center"
               >
                 <span className="whitespace-nowrap">Get Started</span>
               </Link>
 
-              <div className="pt-6 mt-7 border-t border-[#E8E4DC] text-center">
-                <p className="text-[13px] text-[#777777]">
-                  Already have an account?{' '}
-                  <Link to="/login" className="text-[#E63946] font-bold hover:underline">
-                    Sign In
-                  </Link>
-                </p>
-              </div>
+              <Link
+                to="/login"
+                className="w-full h-12 px-6 rounded-full bg-white hover:bg-[#FFF0F1] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#E63946] border border-[#E63946] text-[#202124] font-semibold text-sm transition-all flex items-center justify-center"
+              >
+                <span className="whitespace-nowrap">Sign In</span>
+              </Link>
             </div>
           </div>
 

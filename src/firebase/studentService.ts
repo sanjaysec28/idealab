@@ -169,7 +169,7 @@ async function writeStudentProfilePatch(
       handleFirestoreError(error, OperationType.UPDATE, docPath);
     }
 
-    // Non-fatal sync of public non-PII display metadata to availability/current if it exists
+    // Non-fatal sync of public collaboration display metadata to availability/current if it exists
     try {
       const availabilityRef = doc(db, STUDENTS_COLLECTION, uid, 'availability', 'current');
       const availSnap = await getDoc(availabilityRef);
@@ -181,12 +181,19 @@ async function writeStudentProfilePatch(
           'photoURL',
           'avatarPresetId',
           'skills',
+          'phoneNumber',
+          'whatsappNumber',
+          'profileSetupCompleted',
         ] as const;
         const availPatch: Record<string, unknown> = { emailVerified: true };
         let hasPublicUpdate = false;
         for (const key of publicKeys) {
           if (key in patch) {
-            availPatch[key] = patch[key];
+            if (key === 'profileSetupCompleted') {
+              availPatch.profileComplete = Boolean(patch[key]);
+            } else {
+              availPatch[key] = patch[key];
+            }
             hasPublicUpdate = true;
           }
         }
@@ -242,6 +249,7 @@ export interface EditableProfileDetailsInput {
   currentSemester: string;
   location: string;
   phoneNumber: string;
+  whatsappNumber?: string;
   bio: string;
 }
 
@@ -255,6 +263,7 @@ export async function updateStudentProfileDetails(
   const currentSemester = updates.currentSemester.trim().slice(0, 24);
   const location = updates.location.trim().slice(0, 120);
   const phoneNumber = updates.phoneNumber.trim().slice(0, 32);
+  const whatsappNumber = (updates.whatsappNumber ?? '').trim().slice(0, 32);
   const bio = updates.bio.trim().slice(0, 600);
 
   if (fullName.length < 2) {
@@ -272,6 +281,9 @@ export async function updateStudentProfileDetails(
   if (phoneNumber && !/^[0-9+\-\s()]{7,24}$/.test(phoneNumber)) {
     throw new Error('Please enter a valid phone number (7–24 digits).');
   }
+  if (whatsappNumber && !/^[0-9+\-\s()]{7,24}$/.test(whatsappNumber)) {
+    throw new Error('Please enter a valid WhatsApp number (7–24 digits).');
+  }
 
   await writeStudentProfilePatch(uid, {
     fullName,
@@ -281,6 +293,7 @@ export async function updateStudentProfileDetails(
     currentSemester,
     location,
     phoneNumber,
+    whatsappNumber,
     bio,
     profileSetupCompleted: true,
   });

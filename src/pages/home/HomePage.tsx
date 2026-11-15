@@ -8,6 +8,7 @@ import {
 import { StudentAvailabilityDoc } from '../../types/timetable';
 import {
   calculateTimetableSummary,
+  getCurrentPeriodStatus,
   getTodayFreeSlots,
   getTodayFreeSlotsFromAvailability,
   hasValidStudentTimetable,
@@ -15,9 +16,11 @@ import {
 import { AvailabilityDiscoveryModal } from '../../components/home/AvailabilityDiscoveryModal';
 import { CollaborationAvailabilityCard } from '../../components/home/CollaborationAvailabilityCard';
 import { CommunityFeed } from '../../components/home/CommunityFeed';
+import { ExploreAvailabilityModal } from '../../components/home/ExploreAvailabilityModal';
 import { FreeSlotsCard } from '../../components/home/FreeSlotsCard';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { LeaderboardCard } from '../../components/home/LeaderboardCard';
+import { LiveAvailabilityModal } from '../../components/home/LiveAvailabilityModal';
 import { MobileBottomNavigation } from '../../components/home/MobileBottomNavigation';
 import { QuickActions } from '../../components/home/QuickActions';
 import { SmartAvailabilityHero } from '../../components/home/SmartAvailabilityHero';
@@ -34,24 +37,44 @@ export const HomePage: React.FC = () => {
   } = useAuth();
   const uid = user?.uid || '';
 
+  const [now, setNow] = useState<Date>(() => new Date());
   const [optimisticOptIn, setOptimisticOptIn] = useState<boolean | null>(null);
   const [isSavingOptIn, setIsSavingOptIn] = useState(false);
   const [optInError, setOptInError] = useState<string | null>(null);
 
-  const [availablePeers, setAvailablePeers] = useState<StudentAvailabilityDoc[]>([]);
+  const [qualifiedStudents, setQualifiedStudents] = useState<StudentAvailabilityDoc[]>([]);
   const [isLoadingAvailability, setIsLoadingAvailability] = useState<boolean>(true);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
-  const hasSyncedPublicProfileRef = useRef(false);
+  const [availabilityRetryKey, setAvailabilityRetryKey] = useState(0);
+  const syncedSignatureRef = useRef<string | null>(null);
 
+  const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
+  const [isExploreModalOpen, setIsExploreModalOpen] = useState(false);
   const [discoveryModal, setDiscoveryModal] = useState<{
     isOpen: boolean;
     tab: 'students' | 'common-slot';
-  }>({ isOpen: false, tab: 'students' });
+  }>({ isOpen: false, tab: 'common-slot' });
+
+  // Refresh Asia/Kolkata campus period clock every 30 seconds and on tab focus
+  useEffect(() => {
+    const updateNow = () => setNow(new Date());
+    const intervalId = window.setInterval(updateNow, 30_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        updateNow();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     setOptimisticOptIn(null);
     setOptInError(null);
-    hasSyncedPublicProfileRef.current = false;
+    syncedSignatureRef.current = null;
   }, [studentAvailability?.isOptedIn, uid]);
 
   const publicProfile = useMemo(
@@ -62,13 +85,20 @@ export const HomePage: React.FC = () => {
       photoURL: studentProfile?.photoURL || user?.photoURL || undefined,
       avatarPresetId: studentProfile?.avatarPresetId,
       skills: studentProfile?.skills,
+      phoneNumber: studentProfile?.phoneNumber ?? '',
+      whatsappNumber: studentProfile?.whatsappNumber ?? '',
+      profileComplete: Boolean(
+        (studentProfile?.fullName || user?.displayName) &&
+          studentProfile?.department &&
+          (studentProfile?.currentAcademicYear || studentProfile?.academicYear)
+      ),
     }),
     [studentProfile, user?.displayName, user?.photoURL]
   );
 
   useEffect(() => {
     if (!uid || !user?.emailVerified) {
-      setAvailablePeers([]);
+      setQualifiedStudents([]);
       setIsLoadingAvailability(false);
       setAvailabilityError(null);
       return;
@@ -79,9 +109,10 @@ export const HomePage: React.FC = () => {
 
     const unsubscribe = subscribeToOptedInAvailability(
       uid,
-      (peers) => {
-        setAvailablePeers(peers);
+      (students) => {
+        setQualifiedStudents(students);
         setIsLoadingAvailability(false);
+        setAvailabilityError(null);
       },
       (err) => {
         setAvailabilityError(err.message || 'Unable to load available students.');
@@ -90,21 +121,40 @@ export const HomePage: React.FC = () => {
     );
 
     return () => unsubscribe();
-  }, [uid, user?.emailVerified]);
+  }, [availabilityRetryKey, uid, user?.emailVerified]);
 
+  // Backfill or keep public contact & profileComplete fields synced into availability/current
   useEffect(() => {
     if (
       !uid ||
       !user?.emailVerified ||
-      hasSyncedPublicProfileRef.current ||
       !studentAvailability?.hasSubmittedTimetable ||
-      studentAvailability.fullName ||
       !studentProfile
     ) {
       return;
     }
 
-    hasSyncedPublicProfileRef.current = true;
+    const needsSync =
+      !studentAvailability.fullName ||
+      studentAvailability.profileComplete !== publicProfile.profileComplete ||
+      (studentAvailability.phoneNumber ?? '') !== (publicProfile.phoneNumber ?? '') ||
+      (studentAvailability.whatsappNumber ?? '') !== (publicProfile.whatsappNumber ?? '');
+
+    if (!needsSync) return;
+
+    const signature = JSON.stringify({
+      uid,
+      fullName: publicProfile.fullName ?? '',
+      phoneNumber: publicProfile.phoneNumber ?? '',
+      whatsappNumber: publicProfile.whatsappNumber ?? '',
+      profileComplete: publicProfile.profileComplete,
+    });
+
+    if (syncedSignatureRef.current === signature) {
+      return;
+    }
+
+    syncedSignatureRef.current = signature;
     void syncAvailabilityPublicProfile(uid, publicProfile).catch(() => {
       // Non-fatal metadata backfill
     });
@@ -112,10 +162,39 @@ export const HomePage: React.FC = () => {
     publicProfile,
     studentAvailability?.fullName,
     studentAvailability?.hasSubmittedTimetable,
+    studentAvailability?.phoneNumber,
+    studentAvailability?.profileComplete,
+    studentAvailability?.whatsappNumber,
     studentProfile,
     uid,
     user?.emailVerified,
   ]);
+
+  const currentPeriod = useMemo(() => getCurrentPeriodStatus(now), [now]);
+
+  const studentsFreeNow = useMemo(() => {
+    if (
+      currentPeriod.kind !== 'active_period' ||
+      !currentPeriod.weekdayId ||
+      !currentPeriod.activeSlot
+    ) {
+      return [];
+    }
+
+    const dayId = currentPeriod.weekdayId;
+    const slotId = currentPeriod.activeSlot.id;
+
+    return qualifiedStudents
+      .filter((student) =>
+        student.freeSlots.some((entry) => entry.day === dayId && entry.slotId === slotId)
+      )
+      .sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+  }, [currentPeriod.activeSlot, currentPeriod.kind, currentPeriod.weekdayId, qualifiedStudents]);
+
+  const availablePeers = useMemo(
+    () => qualifiedStudents.filter((student) => student.uid !== uid),
+    [qualifiedStudents, uid]
+  );
 
   const classes = studentTimetable?.classes ?? [];
 
@@ -129,10 +208,10 @@ export const HomePage: React.FC = () => {
 
   const todaySlotsInfo = useMemo(() => {
     if (studentAvailability && studentAvailability.hasSubmittedTimetable) {
-      return getTodayFreeSlotsFromAvailability(studentAvailability);
+      return getTodayFreeSlotsFromAvailability(studentAvailability, now);
     }
-    return getTodayFreeSlots(hasValidTimetable ? classes : []);
-  }, [classes, hasValidTimetable, studentAvailability]);
+    return getTodayFreeSlots(hasValidTimetable ? classes : [], now);
+  }, [classes, hasValidTimetable, now, studentAvailability]);
 
   const weeklySummary = useMemo(
     () => calculateTimetableSummary(hasValidTimetable ? classes : []),
@@ -149,40 +228,6 @@ export const HomePage: React.FC = () => {
     optimisticOptIn !== null
       ? optimisticOptIn
       : Boolean(studentAvailability?.isOptedIn);
-
-  const todayCommonSlotsCount = useMemo(() => {
-    if (
-      !hasValidTimetable ||
-      todaySlotsInfo.isSunday ||
-      !todaySlotsInfo.weekday ||
-      todaySlotsInfo.freeSlots.length === 0 ||
-      availablePeers.length === 0
-    ) {
-      return 0;
-    }
-
-    const targetDayId = todaySlotsInfo.weekday.id;
-    let count = 0;
-
-    for (const mySlot of todaySlotsInfo.freeSlots) {
-      const hasPeerWithSameSlot = availablePeers.some((peer) =>
-        peer.freeSlots.some(
-          (peerSlot) => peerSlot.day === targetDayId && peerSlot.slotId === mySlot.id
-        )
-      );
-      if (hasPeerWithSameSlot) {
-        count += 1;
-      }
-    }
-
-    return count;
-  }, [
-    availablePeers,
-    hasValidTimetable,
-    todaySlotsInfo.freeSlots,
-    todaySlotsInfo.isSunday,
-    todaySlotsInfo.weekday,
-  ]);
 
   const handleToggleAvailability = async (nextValue: boolean) => {
     if (!uid || !hasValidTimetable || isSavingOptIn) return;
@@ -205,8 +250,6 @@ export const HomePage: React.FC = () => {
     }
   };
 
-  const liveAvailableStudentsCount = availablePeers.length;
-
   return (
     <div className="min-h-[100dvh] bg-[#FAF8F5] text-[#202124] flex flex-col">
       <HomeHeader />
@@ -216,14 +259,13 @@ export const HomePage: React.FC = () => {
           {/* LEFT / MAIN AREA (~74%) */}
           <div className="space-y-5 min-w-0">
             <SmartAvailabilityHero
-              availableStudentsCount={liveAvailableStudentsCount}
-              yourFreePeriodsCount={todaySlotsInfo.freeSlots.length}
-              commonSlotsCount={todayCommonSlotsCount}
+              studentsFreeNowCount={studentsFreeNow.length}
+              currentPeriod={currentPeriod}
               isLoadingAvailability={isLoadingAvailability}
-              hasValidTimetable={hasValidTimetable}
-              onExploreAvailableStudents={() =>
-                setDiscoveryModal({ isOpen: true, tab: 'students' })
-              }
+              availabilityError={availabilityError}
+              onRetryAvailability={() => setAvailabilityRetryKey((prev) => prev + 1)}
+              onOpenLiveAvailability={() => setIsLiveModalOpen(true)}
+              onExploreAvailableStudents={() => setIsExploreModalOpen(true)}
               onFindCommonFreeSlot={() =>
                 setDiscoveryModal({ isOpen: true, tab: 'common-slot' })
               }
@@ -282,6 +324,31 @@ export const HomePage: React.FC = () => {
       </main>
 
       <MobileBottomNavigation />
+
+      <LiveAvailabilityModal
+        isOpen={isLiveModalOpen}
+        currentUid={uid}
+        qualifiedStudents={qualifiedStudents}
+        currentPeriod={currentPeriod}
+        hasValidTimetable={hasValidTimetable}
+        isCurrentUserOptedIn={isOptedIn}
+        isLoading={isLoadingAvailability}
+        error={availabilityError}
+        onRetry={() => setAvailabilityRetryKey((prev) => prev + 1)}
+        onClose={() => setIsLiveModalOpen(false)}
+      />
+
+      <ExploreAvailabilityModal
+        isOpen={isExploreModalOpen}
+        currentUid={uid}
+        qualifiedStudents={qualifiedStudents}
+        currentPeriod={currentPeriod}
+        hasValidTimetable={hasValidTimetable}
+        isLoading={isLoadingAvailability}
+        error={availabilityError}
+        onRetry={() => setAvailabilityRetryKey((prev) => prev + 1)}
+        onClose={() => setIsExploreModalOpen(false)}
+      />
 
       <AvailabilityDiscoveryModal
         isOpen={discoveryModal.isOpen}
