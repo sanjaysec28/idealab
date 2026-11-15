@@ -112,14 +112,21 @@ export const HomeHeader: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-[#EAE6E1]">
-      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-[68px] flex items-center justify-between gap-3 sm:gap-4">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-5 xl:px-7 min-[1400px]:px-8 h-16 sm:h-[68px] flex items-center justify-between gap-3 xl:gap-4 min-[1400px]:gap-5">
         {/* LEFT: IDEA LAB Brand */}
-        <Link to="/home" aria-label="IDEA LAB Home" className="flex items-center shrink-0">
+        <Link
+          to="/home"
+          aria-label="IDEA LAB Home"
+          className="flex items-center shrink-0 sm:pl-1 lg:pr-2 xl:pr-3 min-[1400px]:pr-4"
+        >
           <IdeaLabLogo variant="header" />
         </Link>
 
         {/* CENTER: Horizontal Desktop Navigation */}
-        <nav aria-label="Primary Navigation" className="hidden lg:flex items-center gap-1 xl:gap-1.5">
+        <nav
+          aria-label="Primary Navigation"
+          className="hidden lg:flex items-center lg:gap-0.5 xl:gap-1 min-[1400px]:gap-1.5 min-w-0"
+        >
           {DESKTOP_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             return (
@@ -127,14 +134,14 @@ export const HomeHeader: React.FC = () => {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `px-3 xl:px-3.5 py-2 rounded-xl text-[13px] flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                  `px-1.5 min-[1150px]:px-2.5 xl:px-2.5 min-[1400px]:px-3.5 py-2 rounded-xl text-[12px] min-[1150px]:text-[12.5px] xl:text-[13px] flex items-center gap-1 xl:gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                     isActive
                       ? 'bg-[#FFF0F1] text-[#E63946] font-bold'
                       : 'text-[#555555] hover:text-[#202124] hover:bg-[#FAF8F5] font-medium'
                   }`
                 }
               >
-                <Icon className="w-4 h-4 shrink-0" />
+                <Icon className="w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0" />
                 <span>{item.label}</span>
               </NavLink>
             );
@@ -154,7 +161,7 @@ export const HomeHeader: React.FC = () => {
               }}
               aria-label="Open notifications"
               aria-expanded={showNotifications}
-              className="w-10 h-10 rounded-xl bg-[#FAF8F5] hover:bg-[#F3EFE9] border border-[#EAE6E1] flex items-center justify-center text-[#555555] hover:text-[#202124] transition-colors relative cursor-pointer"
+              className="w-10 h-10 lg:w-9 lg:h-9 xl:w-10 xl:h-10 rounded-xl bg-[#FAF8F5] hover:bg-[#F3EFE9] border border-[#EAE6E1] flex items-center justify-center text-[#555555] hover:text-[#202124] transition-colors relative cursor-pointer"
             >
               <Bell className="w-4 h-4" />
               {hasUnreadNotifs && (
@@ -222,7 +229,7 @@ export const HomeHeader: React.FC = () => {
                 </div>
               )}
 
-              <div className="hidden md:block text-left max-w-[170px]">
+              <div className="hidden md:block text-left md:max-w-[140px] lg:max-w-[88px] min-[1150px]:max-w-[120px] xl:max-w-[145px] min-[1400px]:max-w-[175px]">
                 <p className="text-xs font-bold text-[#202124] leading-tight truncate">
                   {displayName}
                 </p>

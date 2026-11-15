@@ -8,6 +8,7 @@ export const ASSETS = {
     full: '/images/logo.png',
     icon: '/images/logo.png',
     banner: '/images/logo.png',
+    navbarSvg: '/images/idealab-logo.svg',
   },
   ideaLabLogo: '/images/logo.png',
   splashScreen: '/images/logo.png',
