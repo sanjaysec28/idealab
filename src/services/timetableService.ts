@@ -636,12 +636,14 @@ export async function createOrUpdateReviewTimetable(params: {
           lastEditedByRole: 'student',
         });
 
+        const needsAttemptInit = (student.timetableAttemptsUsed ?? 0) < 1;
         tx.update(studentRef, {
           department: resolvedDepartment,
           academicYear: resolvedAcademicYear,
           currentAcademicYear: resolvedAcademicYear,
           currentSemester: resolvedSemester,
           timetableWorkflowState: 'in_review',
+          ...(needsAttemptInit ? { timetableAttemptsUsed: 1, timetableLocked: false } : {}),
           timetableLastModifiedBy: uid,
           timetableUpdatedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),

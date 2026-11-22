@@ -915,9 +915,9 @@ service cloud.firestore {
             && existing().submissionStatus == 'in_review'
             && isValidTimetableWrite(incoming(), uid)
             && incoming().uid == existing().uid
-            && (!('attemptNumber' in existing()) ? incoming().attemptNumber == 1 : incoming().attemptNumber == existing().attemptNumber)
-            && (!('createdAt' in existing()) ? incoming().createdAt is timestamp : incoming().createdAt == existing().createdAt)
-            && (!('version' in existing()) ? incoming().version >= 1 : incoming().version >= existing().version)
+            && (!('attemptNumber' in existing()) || existing().attemptNumber == null ? incoming().attemptNumber == 1 : incoming().attemptNumber == existing().attemptNumber)
+            && (!('createdAt' in existing()) || existing().createdAt == null ? incoming().createdAt is timestamp : incoming().createdAt == existing().createdAt)
+            && (!('version' in existing()) || existing().version == null ? incoming().version >= 1 : incoming().version >= existing().version)
             && incoming().lastEditedByUid == request.auth.uid
             && incoming().lastEditedByRole == 'student'
             && (

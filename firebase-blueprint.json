@@ -237,6 +237,10 @@
           "minItems": 1,
           "maxItems": 24
         },
+        "scheduleByDay": {
+          "type": "object",
+          "description": "Optional top-level weekday-to-slot map; canonical scheduleByDay maps live inside each entry of classes."
+        },
         "selectedWeekdays": {
           "type": "array",
           "maxItems": 6
