@@ -470,6 +470,29 @@ service cloud.firestore {
         && data.createdAt == prev.createdAt;
     }
 
+    // Optional weekday-to-slot map used by the timetable UI.
+    // Only known weekdays and supported slot IDs are accepted.
+    function isValidScheduleDaySlots(schedule, day) {
+      return !(day in schedule) || (
+        schedule[day] is list
+        && schedule[day].size() <= 4
+        && schedule[day].hasOnly(['slot-1', 'slot-2', 'slot-3', 'slot-4'])
+      );
+    }
+
+    function isValidScheduleByDay(data) {
+      return !('scheduleByDay' in data) || (
+        data.scheduleByDay is map
+        && data.scheduleByDay.keys().hasOnly(['mon', 'tue', 'wed', 'thu', 'fri', 'sat'])
+        && isValidScheduleDaySlots(data.scheduleByDay, 'mon')
+        && isValidScheduleDaySlots(data.scheduleByDay, 'tue')
+        && isValidScheduleDaySlots(data.scheduleByDay, 'wed')
+        && isValidScheduleDaySlots(data.scheduleByDay, 'thu')
+        && isValidScheduleDaySlots(data.scheduleByDay, 'fri')
+        && isValidScheduleDaySlots(data.scheduleByDay, 'sat')
+      );
+    }
+
     function isValidTimetableWrite(data, uid) {
       return data.keys().hasAll([
           'uid',
@@ -500,6 +523,7 @@ service cloud.firestore {
           'academicYear',
           'department',
           'classes',
+          'scheduleByDay',
           'selectedWeekdays',
           'selectedTimeSlots',
           'subjectCodes',
@@ -520,6 +544,7 @@ service cloud.firestore {
           'lastEditedByRole'
         ])
         && data.uid == uid
+        && isValidScheduleByDay(data)
         && data.semester is string && data.semester.size() >= 1 && data.semester.size() <= 24
         && data.academicYear is string && data.academicYear.size() >= 2 && data.academicYear.size() <= 24
         && data.department is string && data.department.size() >= 2 && data.department.size() <= 80
