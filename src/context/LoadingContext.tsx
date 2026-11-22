@@ -88,6 +88,12 @@ export const LoadingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setInitError(null);
   }, []);
 
+  useEffect(() => {
+    if (authState !== 'loading' && !authError) {
+      setInitError(null);
+    }
+  }, [authState, authError]);
+
   const startBackgroundRefresh = useCallback(() => {
     setRefreshCount((c) => c + 1);
     let stopped = false;

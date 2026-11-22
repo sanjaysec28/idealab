@@ -44,6 +44,14 @@ service cloud.firestore {
     function isAdmin() {
       return isEmailVerified() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.admin == true ||
+        request.auth.token.email == 'sanjaykumarbjc@gmail.com'
+      );
+    }
+
+    function isListAdminClaim() {
+      return isEmailVerified() && (
+        request.auth.token.admin == true ||
         request.auth.token.email == 'sanjaykumarbjc@gmail.com'
       );
     }
@@ -92,6 +100,13 @@ service cloud.firestore {
       );
     }
 
+    function isValidRegNoString(regNo) {
+      return regNo is string
+        && regNo.size() >= 4
+        && regNo.size() <= 32
+        && regNo.matches('^[A-Z0-9\\-]+$');
+    }
+
     function isValidStudentFields(data, uid) {
       return data.uid is string
         && data.uid == uid
@@ -101,13 +116,15 @@ service cloud.firestore {
         && data.fullName.size() <= 100
         && isValidEmail(data.email)
         && data.createdAt is timestamp
-        && (!( 'registrationNumber' in data ) || (
+        && (!('authProvider' in data) || data.authProvider in ['google', 'password'])
+        && (!('registrationNumber' in data) || (
           data.registrationNumber is string
           && data.registrationNumber.size() >= 4
           && data.registrationNumber.size() <= 32
           && data.registrationNumber.matches('^[A-Za-z0-9\\-]+$')
         ))
         && isOptionalBoundedString(data, 'department', 2, 80)
+        && isOptionalBoundedString(data, 'degree', 2, 40)
         && isOptionalBoundedString(data, 'academicYear', 2, 24)
         && isOptionalBoundedString(data, 'currentAcademicYear', 2, 24)
         && isOptionalBoundedString(data, 'currentSemester', 1, 24)
@@ -124,9 +141,21 @@ service cloud.firestore {
         && isOptionalSocialLinks(data)
         && isOptionalBool(data, 'timetableCompleted')
         && isOptionalBool(data, 'profileSetupCompleted')
-        && (!( 'timetableStatus' in data ) || data.timetableStatus in ['not_submitted', 'submitted'])
-        && (!( 'timetableUpdatedAt' in data ) || data.timetableUpdatedAt is timestamp)
-        && (!( 'updatedAt' in data ) || data.updatedAt is timestamp);
+        && isOptionalBool(data, 'timetableLocked')
+        && (!('timetableStatus' in data) || data.timetableStatus in ['not_submitted', 'submitted'])
+        && (!('timetableWorkflowState' in data) || data.timetableWorkflowState in ['not_started', 'in_review', 'finalized'])
+        && (!('timetableAttemptsUsed' in data) || (data.timetableAttemptsUsed is int && data.timetableAttemptsUsed >= 0 && data.timetableAttemptsUsed <= 1))
+        && (!('timetableWarningAcceptedAt' in data) || data.timetableWarningAcceptedAt is timestamp)
+        && (!('timetableFinalizedAt' in data) || data.timetableFinalizedAt is timestamp)
+        && isOptionalBoundedString(data, 'timetableLastModifiedBy', 1, 128)
+        && (!('timetableUpdatedAt' in data) || data.timetableUpdatedAt is timestamp)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function hasValidRegNoReservationAfter(regNo, uid) {
+      return isValidRegNoString(regNo)
+        && existsAfter(/databases/$(database)/documents/registrationNumbers/$(regNo))
+        && getAfter(/databases/$(database)/documents/registrationNumbers/$(regNo)).data.uid == uid;
     }
 
     function isValidLiveStudentCreate(data, uid) {
@@ -135,8 +164,10 @@ service cloud.firestore {
           'uid',
           'fullName',
           'email',
+          'authProvider',
           'registrationNumber',
           'department',
+          'degree',
           'academicYear',
           'currentAcademicYear',
           'currentSemester',
@@ -151,10 +182,16 @@ service cloud.firestore {
           'skills',
           'interests',
           'socialLinks',
+          'profileSetupCompleted',
+          'timetableWorkflowState',
+          'timetableAttemptsUsed',
+          'timetableWarningAcceptedAt',
+          'timetableLocked',
+          'timetableFinalizedAt',
+          'timetableLastModifiedBy',
           'timetableCompleted',
           'timetableStatus',
           'timetableUpdatedAt',
-          'profileSetupCompleted',
           'createdAt',
           'updatedAt'
         ])
@@ -162,8 +199,39 @@ service cloud.firestore {
         && data.uid == request.auth.uid
         && data.email.lower() == request.auth.token.email.lower()
         && data.createdAt == request.time
-        && (!( 'updatedAt' in data ) || data.updatedAt == request.time)
-        && (!( 'timetableUpdatedAt' in data ) || data.timetableUpdatedAt == request.time);
+        && (!('updatedAt' in data) || data.updatedAt == request.time)
+        && (!('timetableUpdatedAt' in data) || data.timetableUpdatedAt == request.time)
+        && (!('timetableAttemptsUsed' in data) || data.timetableAttemptsUsed == 0)
+        && (!('timetableLocked' in data) || data.timetableLocked == false)
+        && (!('timetableWorkflowState' in data) || data.timetableWorkflowState == 'not_started')
+        && (!('timetableCompleted' in data) || data.timetableCompleted == false)
+        && !('timetableFinalizedAt' in data)
+        && (!('registrationNumber' in data) || hasValidRegNoReservationAfter(data.registrationNumber, uid));
+    }
+
+    function isStudentTimetableCurrentlyLocked(prev) {
+      return ('timetableLocked' in prev && prev.timetableLocked == true)
+        || ('timetableWorkflowState' in prev && prev.timetableWorkflowState == 'finalized');
+    }
+
+    function isValidStudentAttemptsTransition(data, prev) {
+      return ('timetableAttemptsUsed' in prev && prev.timetableAttemptsUsed >= 1)
+        ? (data.timetableAttemptsUsed == prev.timetableAttemptsUsed)
+        : (!('timetableAttemptsUsed' in data) || data.timetableAttemptsUsed in [0, 1]);
+    }
+
+    function isValidStudentWorkflowTransition(data, prev) {
+      return !('timetableWorkflowState' in prev)
+        ? (!('timetableWorkflowState' in data) || data.timetableWorkflowState in ['not_started', 'in_review'])
+        : (
+          prev.timetableWorkflowState == 'finalized'
+            ? data.timetableWorkflowState == 'finalized'
+            : (
+              prev.timetableWorkflowState == 'in_review'
+                ? data.timetableWorkflowState in ['in_review', 'finalized']
+                : data.timetableWorkflowState in ['not_started', 'in_review']
+            )
+        );
     }
 
     function isValidLiveStudentSelfUpdate(data, prev, uid) {
@@ -172,8 +240,10 @@ service cloud.firestore {
           'uid',
           'fullName',
           'email',
+          'authProvider',
           'registrationNumber',
           'department',
+          'degree',
           'academicYear',
           'currentAcademicYear',
           'currentSemester',
@@ -188,10 +258,16 @@ service cloud.firestore {
           'skills',
           'interests',
           'socialLinks',
+          'profileSetupCompleted',
+          'timetableWorkflowState',
+          'timetableAttemptsUsed',
+          'timetableWarningAcceptedAt',
+          'timetableLocked',
+          'timetableFinalizedAt',
+          'timetableLastModifiedBy',
           'timetableCompleted',
           'timetableStatus',
           'timetableUpdatedAt',
-          'profileSetupCompleted',
           'membershipStatus',
           'approvedAt',
           'approvedBy',
@@ -203,12 +279,41 @@ service cloud.firestore {
         && data.uid == prev.uid
         && data.email == prev.email
         && data.createdAt == prev.createdAt
-        && (!('registrationNumber' in prev) || data.registrationNumber == prev.registrationNumber)
+        && (
+          ('registrationNumber' in prev && data.registrationNumber == prev.registrationNumber) ||
+          (!('registrationNumber' in prev) && (!('registrationNumber' in data) || hasValidRegNoReservationAfter(data.registrationNumber, uid)))
+        )
+        && (!('profileSetupCompleted' in prev && prev.profileSetupCompleted == true) || data.profileSetupCompleted == true)
+        && (!('timetableLocked' in prev && prev.timetableLocked == true) || data.timetableLocked == true)
+        && (!('timetableWarningAcceptedAt' in prev) || data.timetableWarningAcceptedAt == prev.timetableWarningAcceptedAt)
+        && (!('timetableWarningAcceptedAt' in data) || ('timetableWarningAcceptedAt' in prev) || data.timetableWarningAcceptedAt == request.time)
+        && (!('timetableFinalizedAt' in prev) || data.timetableFinalizedAt == prev.timetableFinalizedAt)
+        && (!('timetableFinalizedAt' in data) || ('timetableFinalizedAt' in prev) || (
+          data.timetableFinalizedAt == request.time &&
+          data.timetableLocked == true &&
+          data.timetableWorkflowState == 'finalized'
+        ))
+        && isValidStudentAttemptsTransition(data, prev)
+        && isValidStudentWorkflowTransition(data, prev)
+        && (!isStudentTimetableCurrentlyLocked(prev) || !data.diff(prev).affectedKeys().hasAny([
+          'timetableWorkflowState',
+          'timetableAttemptsUsed',
+          'timetableWarningAcceptedAt',
+          'timetableLocked',
+          'timetableFinalizedAt',
+          'timetableLastModifiedBy',
+          'timetableCompleted',
+          'timetableStatus',
+          'timetableUpdatedAt'
+        ]))
         && data.updatedAt == request.time
-        && (!( 'timetableUpdatedAt' in data ) || data.timetableUpdatedAt == request.time || (('timetableUpdatedAt' in prev) && data.timetableUpdatedAt == prev.timetableUpdatedAt))
+        && (!('timetableUpdatedAt' in data) || data.timetableUpdatedAt == request.time || (('timetableUpdatedAt' in prev) && data.timetableUpdatedAt == prev.timetableUpdatedAt))
         && data.diff(prev).affectedKeys().hasOnly([
           'fullName',
+          'authProvider',
+          'registrationNumber',
           'department',
+          'degree',
           'academicYear',
           'currentAcademicYear',
           'currentSemester',
@@ -223,10 +328,16 @@ service cloud.firestore {
           'skills',
           'interests',
           'socialLinks',
+          'profileSetupCompleted',
+          'timetableWorkflowState',
+          'timetableAttemptsUsed',
+          'timetableWarningAcceptedAt',
+          'timetableLocked',
+          'timetableFinalizedAt',
+          'timetableLastModifiedBy',
           'timetableCompleted',
           'timetableStatus',
           'timetableUpdatedAt',
-          'profileSetupCompleted',
           'updatedAt'
         ]);
     }
@@ -237,8 +348,10 @@ service cloud.firestore {
           'uid',
           'fullName',
           'email',
+          'authProvider',
           'registrationNumber',
           'department',
+          'degree',
           'academicYear',
           'currentAcademicYear',
           'currentSemester',
@@ -253,10 +366,16 @@ service cloud.firestore {
           'skills',
           'interests',
           'socialLinks',
+          'profileSetupCompleted',
+          'timetableWorkflowState',
+          'timetableAttemptsUsed',
+          'timetableWarningAcceptedAt',
+          'timetableLocked',
+          'timetableFinalizedAt',
+          'timetableLastModifiedBy',
           'timetableCompleted',
           'timetableStatus',
           'timetableUpdatedAt',
-          'profileSetupCompleted',
           'membershipStatus',
           'approvedAt',
           'approvedBy',
@@ -285,9 +404,13 @@ service cloud.firestore {
           'classDays',
           'totalClasses',
           'submissionStatus',
+          'isLocked',
+          'attemptNumber',
           'version',
-          'submittedAt',
-          'updatedAt'
+          'createdAt',
+          'updatedAt',
+          'lastEditedByUid',
+          'lastEditedByRole'
         ])
         && data.keys().hasOnly([
           'uid',
@@ -304,12 +427,17 @@ service cloud.firestore {
           'classDays',
           'totalClasses',
           'submissionStatus',
+          'isLocked',
+          'attemptNumber',
           'version',
+          'createdAt',
           'submittedAt',
-          'updatedAt'
+          'finalizedAt',
+          'updatedAt',
+          'lastEditedByUid',
+          'lastEditedByRole'
         ])
         && data.uid == uid
-        && data.uid == request.auth.uid
         && data.semester is string && data.semester.size() >= 1 && data.semester.size() <= 24
         && data.academicYear is string && data.academicYear.size() >= 2 && data.academicYear.size() <= 24
         && data.department is string && data.department.size() >= 2 && data.department.size() <= 80
@@ -322,10 +450,16 @@ service cloud.firestore {
         && data.totalSubjects is int && data.totalSubjects >= 1 && data.totalSubjects <= 24
         && data.classDays is int && data.classDays >= 1 && data.classDays <= 6
         && data.totalClasses is int && data.totalClasses >= 1 && data.totalClasses <= 24
-        && data.submissionStatus == 'submitted'
+        && data.submissionStatus in ['in_review', 'finalized', 'submitted']
+        && data.isLocked is bool
+        && data.attemptNumber is int && data.attemptNumber == 1
         && data.version is int && data.version >= 1 && data.version <= 1000
-        && data.submittedAt == request.time
-        && data.updatedAt == request.time;
+        && data.createdAt is timestamp
+        && (!('submittedAt' in data) || data.submittedAt is timestamp)
+        && (!('finalizedAt' in data) || data.finalizedAt is timestamp)
+        && data.updatedAt == request.time
+        && isValidId(data.lastEditedByUid)
+        && data.lastEditedByRole in ['student', 'admin'];
     }
 
     function isValidAvailabilityWrite(data, uid) {
@@ -351,6 +485,7 @@ service cloud.firestore {
           'timetableVersion',
           'fullName',
           'department',
+          'degree',
           'academicYear',
           'photoURL',
           'avatarPresetId',
@@ -362,7 +497,6 @@ service cloud.firestore {
           'updatedAt'
         ])
         && data.uid == uid
-        && data.uid == request.auth.uid
         && data.freeSlots is list && data.freeSlots.size() <= 24 && (data.freeSlots.size() == 0 || data.freeSlots[0] is map)
         && data.totalFreePeriods is int && data.totalFreePeriods >= 0 && data.totalFreePeriods <= 24
         && data.totalOccupiedPeriods is int && data.totalOccupiedPeriods >= 0 && data.totalOccupiedPeriods <= 24
@@ -374,6 +508,7 @@ service cloud.firestore {
         && data.timetableVersion is int && data.timetableVersion >= 1 && data.timetableVersion <= 1000
         && isOptionalBoundedString(data, 'fullName', 2, 100)
         && isOptionalBoundedString(data, 'department', 2, 80)
+        && isOptionalBoundedString(data, 'degree', 2, 40)
         && isOptionalBoundedString(data, 'academicYear', 2, 24)
         && isOptionalBoundedString(data, 'photoURL', 0, 1000)
         && isOptionalBoundedString(data, 'avatarPresetId', 0, 64)
@@ -548,13 +683,60 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
+    function isValidTimetableAuditLog(data) {
+      return data.keys().hasAll(['studentUid', 'action', 'actorUid', 'actorRole', 'timestamp'])
+        && data.keys().hasOnly([
+          'studentUid',
+          'studentEmail',
+          'studentName',
+          'registrationNumber',
+          'action',
+          'actorUid',
+          'actorEmail',
+          'actorRole',
+          'reason',
+          'previousClasses',
+          'newClasses',
+          'previousVersion',
+          'newVersion',
+          'timestamp'
+        ])
+        && isValidId(data.studentUid)
+        && isValidId(data.actorUid)
+        && isOptionalBoundedString(data, 'studentEmail', 5, 160)
+        && isOptionalBoundedString(data, 'studentName', 1, 100)
+        && isOptionalBoundedString(data, 'registrationNumber', 4, 32)
+        && isOptionalBoundedString(data, 'actorEmail', 5, 160)
+        && isOptionalBoundedString(data, 'reason', 0, 500)
+        && (!('previousClasses' in data) || (data.previousClasses is list && data.previousClasses.size() <= 24))
+        && (!('newClasses' in data) || (data.newClasses is list && data.newClasses.size() <= 24))
+        && (!('previousVersion' in data) || (data.previousVersion is int && data.previousVersion >= 0 && data.previousVersion <= 1000))
+        && (!('newVersion' in data) || (data.newVersion is int && data.newVersion >= 0 && data.newVersion <= 1000))
+        && data.timestamp == request.time;
+    }
+
+    // Global uniqueness reservation for college registration numbers
+    match /registrationNumbers/{regNo} {
+      allow get: if isValidId(regNo) && isVerifiedStudent();
+      allow list: if isListAdminClaim();
+      allow create: if isValidId(regNo)
+        && isValidRegNoString(regNo)
+        && isVerifiedStudent()
+        && incoming().keys().hasAll(['uid', 'createdAt'])
+        && incoming().keys().hasOnly(['uid', 'createdAt'])
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && !exists(/databases/$(database)/documents/registrationNumbers/$(regNo));
+      allow update, delete: if isValidId(regNo) && isAdmin();
+    }
+
     match /students/{uid} {
       allow get: if isValidId(uid) && (isOwner(uid) || isAdmin());
 
       // Never use exists()/get() in list queries
       allow list: if isSignedIn() && (
         resource.data.uid == request.auth.uid ||
-        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+        isListAdminClaim()
       );
 
       allow create: if isValidId(uid)
@@ -573,22 +755,72 @@ service cloud.firestore {
         allow get: if isValidId(uid) && docId == 'current' && (isOwner(uid) || isAdmin());
         allow list: if isValidId(uid) && docId == 'current' && isSignedIn() && (
           resource.data.uid == request.auth.uid ||
-          (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+          isListAdminClaim()
         );
 
-        allow create: if isValidId(uid)
-          && docId == 'current'
-          && isOwner(uid)
-          && isVerifiedStudent()
-          && isValidTimetableWrite(incoming(), uid);
+        allow create: if isValidId(uid) && docId == 'current' && (
+          (
+            isAdmin()
+            && isValidTimetableWrite(incoming(), uid)
+            && incoming().submissionStatus == 'finalized'
+            && incoming().isLocked == true
+            && incoming().lastEditedByUid == request.auth.uid
+            && incoming().lastEditedByRole == 'admin'
+          ) || (
+            isOwner(uid)
+            && isVerifiedStudent()
+            && isValidTimetableWrite(incoming(), uid)
+            && incoming().submissionStatus == 'in_review'
+            && incoming().isLocked == false
+            && incoming().attemptNumber == 1
+            && incoming().version == 1
+            && incoming().createdAt == request.time
+            && incoming().lastEditedByUid == request.auth.uid
+            && incoming().lastEditedByRole == 'student'
+            && get(/databases/$(database)/documents/students/$(uid)).data.profileSetupCompleted == true
+            && ('timetableWarningAcceptedAt' in get(/databases/$(database)/documents/students/$(uid)).data)
+            && (!('timetableAttemptsUsed' in get(/databases/$(database)/documents/students/$(uid)).data)
+              || get(/databases/$(database)/documents/students/$(uid)).data.timetableAttemptsUsed == 0)
+            && getAfter(/databases/$(database)/documents/students/$(uid)).data.timetableAttemptsUsed == 1
+            && getAfter(/databases/$(database)/documents/students/$(uid)).data.timetableWorkflowState == 'in_review'
+          )
+        );
 
-        allow update: if isValidId(uid)
-          && docId == 'current'
-          && isOwner(uid)
-          && isVerifiedStudent()
-          && isValidTimetableWrite(incoming(), uid)
-          && incoming().uid == existing().uid
-          && incoming().version >= existing().version;
+        allow update: if isValidId(uid) && docId == 'current' && (
+          (
+            isAdmin()
+            && isValidTimetableWrite(incoming(), uid)
+            && incoming().uid == existing().uid
+            && incoming().submissionStatus == 'finalized'
+            && incoming().isLocked == true
+            && incoming().lastEditedByUid == request.auth.uid
+            && incoming().lastEditedByRole == 'admin'
+          ) || (
+            isOwner(uid)
+            && isVerifiedStudent()
+            && existing().isLocked == false
+            && existing().submissionStatus == 'in_review'
+            && isValidTimetableWrite(incoming(), uid)
+            && incoming().uid == existing().uid
+            && incoming().attemptNumber == existing().attemptNumber
+            && incoming().createdAt == existing().createdAt
+            && incoming().version >= existing().version
+            && incoming().lastEditedByUid == request.auth.uid
+            && incoming().lastEditedByRole == 'student'
+            && (
+              (
+                incoming().submissionStatus == 'in_review' &&
+                incoming().isLocked == false
+              ) || (
+                incoming().submissionStatus == 'finalized' &&
+                incoming().isLocked == true &&
+                incoming().finalizedAt == request.time &&
+                getAfter(/databases/$(database)/documents/students/$(uid)).data.timetableLocked == true &&
+                getAfter(/databases/$(database)/documents/students/$(uid)).data.timetableWorkflowState == 'finalized'
+              )
+            )
+          )
+        );
 
         allow delete: if isValidId(uid) && isAdmin();
       }
@@ -607,42 +839,54 @@ service cloud.firestore {
 
         allow list: if isValidId(uid) && docId == 'current' && isSignedIn() && (
           resource.data.uid == request.auth.uid ||
-          (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com') ||
+          isListAdminClaim() ||
           (
             isVerifiedStudent()
             && resource.data.isOptedIn == true
           )
         );
 
-        allow create: if isValidId(uid)
-          && docId == 'current'
-          && isOwner(uid)
-          && isVerifiedStudent()
-          && isValidAvailabilityWrite(incoming(), uid);
+        allow create: if isValidId(uid) && docId == 'current' && (
+          (
+            isAdmin() && isValidAvailabilityWrite(incoming(), uid)
+          ) || (
+            isOwner(uid)
+            && isVerifiedStudent()
+            && isValidAvailabilityWrite(incoming(), uid)
+            && getAfter(/databases/$(database)/documents/students/$(uid)).data.timetableWorkflowState in ['in_review', 'finalized']
+          )
+        );
 
-        allow update: if isValidId(uid)
-          && docId == 'current'
-          && isOwner(uid)
-          && isVerifiedStudent()
-          && isValidAvailabilityWrite(incoming(), uid)
-          && incoming().uid == existing().uid
-          && (
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'isOptedIn',
-              'fullName',
-              'department',
-              'academicYear',
-              'photoURL',
-              'avatarPresetId',
-              'skills',
-              'emailVerified',
-              'profileComplete',
-              'phoneNumber',
-              'whatsappNumber',
-              'updatedAt'
-            ]) ||
-            incoming().timetableVersion >= existing().timetableVersion
-          );
+        allow update: if isValidId(uid) && docId == 'current' && (
+          (
+            isAdmin() && isValidAvailabilityWrite(incoming(), uid) && incoming().uid == existing().uid
+          ) || (
+            isOwner(uid)
+            && isVerifiedStudent()
+            && isValidAvailabilityWrite(incoming(), uid)
+            && incoming().uid == existing().uid
+            && (
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'isOptedIn',
+                'fullName',
+                'department',
+                'degree',
+                'academicYear',
+                'photoURL',
+                'avatarPresetId',
+                'skills',
+                'emailVerified',
+                'profileComplete',
+                'phoneNumber',
+                'whatsappNumber',
+                'updatedAt'
+              ]) || (
+                get(/databases/$(database)/documents/students/$(uid)).data.timetableLocked != true
+                && incoming().timetableVersion >= existing().timetableVersion
+              )
+            )
+          )
+        );
 
         allow delete: if isValidId(uid) && isAdmin();
       }
@@ -652,12 +896,45 @@ service cloud.firestore {
     match /{path=**}/availability/{docId} {
       allow list: if isSignedIn() && (
         resource.data.uid == request.auth.uid ||
-        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com') ||
+        isListAdminClaim() ||
         (
           isVerifiedStudent()
           && resource.data.isOptedIn == true
         )
       );
+    }
+
+    // Immutable timetable audit log records
+    match /timetableAuditLogs/{logId} {
+      allow get: if isValidId(logId) && isVerifiedStudent() && (
+        existing().studentUid == request.auth.uid || isAdmin()
+      );
+      allow list: if isVerifiedStudent() && (
+        resource.data.studentUid == request.auth.uid || isListAdminClaim()
+      );
+      allow create: if isValidId(logId) && isValidTimetableAuditLog(incoming()) && (
+        (
+          isVerifiedStudent()
+          && incoming().actorUid == request.auth.uid
+          && incoming().studentUid == request.auth.uid
+          && incoming().actorRole == 'student'
+          && incoming().action in [
+            'warning_acknowledged',
+            'timetable_created',
+            'timetable_updated_in_review',
+            'timetable_finalized'
+          ]
+        ) || (
+          isAdmin()
+          && incoming().actorUid == request.auth.uid
+          && incoming().actorRole == 'admin'
+          && incoming().action == 'admin_correction'
+          && incoming().reason is string
+          && incoming().reason.size() >= 5
+          && incoming().reason.size() <= 500
+        )
+      );
+      allow update, delete: if false;
     }
 
     match /projects/{projectId} {
@@ -669,7 +946,7 @@ service cloud.firestore {
       allow list: if isVerifiedStudent() && (
         resource.data.status == 'published' ||
         resource.data.creatorUid == request.auth.uid ||
-        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+        isListAdminClaim()
       );
       allow create: if isValidId(projectId)
         && isVerifiedStudent()
@@ -715,7 +992,7 @@ service cloud.firestore {
       allow list: if isVerifiedStudent() && (
         resource.data.status == 'published' ||
         resource.data.authorUid == request.auth.uid ||
-        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+        isListAdminClaim()
       );
       allow create: if isValidId(postId)
         && isVerifiedStudent()
@@ -802,7 +1079,7 @@ service cloud.firestore {
       );
       allow list: if isVerifiedStudent() && (
         resource.data.status == 'published' ||
-        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+        isListAdminClaim()
       );
       allow create: if isValidId(eventId) && isAdmin() && isValidCampusEvent(incoming())
         && incoming().createdAt == request.time && incoming().updatedAt == request.time;
@@ -818,7 +1095,7 @@ service cloud.firestore {
       allow list: if isVerifiedStudent() && (
         resource.data.status == 'active' ||
         resource.data.uid == request.auth.uid ||
-        (isEmailVerified() && request.auth.token.email == 'sanjaykumarbjc@gmail.com')
+        isListAdminClaim()
       );
       // Strictly coordinator/admin-controlled points: students can NEVER modify their own points
       allow create, update: if isValidId(uid) && isAdmin() && isValidLeaderboardEntry(incoming(), uid);

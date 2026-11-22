@@ -86,6 +86,8 @@ export interface TimetableFreeSlotDetail {
   label: string;
 }
 
+export type TimetableSubmissionStatus = 'in_review' | 'finalized' | 'submitted';
+
 export interface StudentTimetableDoc {
   uid: string;
   semester: string;
@@ -100,10 +102,16 @@ export interface StudentTimetableDoc {
   totalSubjects: number;
   classDays: number;
   totalClasses: number;
-  submissionStatus: 'submitted';
+  submissionStatus: TimetableSubmissionStatus;
+  isLocked?: boolean;
+  attemptNumber?: number;
   version: number;
+  createdAt?: Timestamp;
   submittedAt?: Timestamp;
+  finalizedAt?: Timestamp;
   updatedAt?: Timestamp;
+  lastEditedByUid?: string;
+  lastEditedByRole?: 'student' | 'admin';
 }
 
 export interface StudentAvailabilityDoc {
@@ -117,6 +125,7 @@ export interface StudentAvailabilityDoc {
   timetableVersion: number;
   fullName?: string;
   department?: string;
+  degree?: string;
   academicYear?: string;
   photoURL?: string;
   avatarPresetId?: string;
@@ -126,6 +135,36 @@ export interface StudentAvailabilityDoc {
   phoneNumber?: string;
   whatsappNumber?: string;
   updatedAt?: Timestamp;
+}
+
+export type TimetableAuditAction =
+  | 'warning_acknowledged'
+  | 'timetable_created'
+  | 'timetable_updated_in_review'
+  | 'timetable_finalized'
+  | 'admin_correction';
+
+export interface TimetableAuditLogDoc {
+  id: string;
+  studentUid: string;
+  studentEmail?: string;
+  studentName?: string;
+  registrationNumber?: string;
+  action: TimetableAuditAction;
+  actorUid: string;
+  actorEmail?: string;
+  actorRole: 'student' | 'admin';
+  reason?: string;
+  previousClasses?: TimetableClassEntry[];
+  newClasses?: TimetableClassEntry[];
+  previousVersion?: number;
+  newVersion?: number;
+  timestamp: Timestamp;
+}
+
+export interface RegistrationNumberLockDoc {
+  uid: string;
+  createdAt: Timestamp;
 }
 
 export interface TimetableSubmissionRecord {

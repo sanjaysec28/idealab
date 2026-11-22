@@ -3,16 +3,19 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { WorkInProgressLayout } from '../layouts/WorkInProgressLayout';
 import { WorkInProgress } from '../components/shared/WorkInProgress';
 import { AuthGuard } from '../components/auth/AuthGuard';
-import { ProtectedRoute, VerifiedEmailGuard } from '../components/auth/MembershipGuard';
+import {
+  AdminGuard,
+  ProfileSetupGuard,
+  ProtectedRoute,
+  VerifiedEmailGuard,
+} from '../components/auth/MembershipGuard';
 import { SplashScreen } from '../pages/auth/SplashScreen';
 import { WelcomePage } from '../pages/auth/WelcomePage';
-import { OnboardingPage } from '../pages/auth/OnboardingPage';
-import { SignupPage } from '../pages/auth/SignupPage';
-import { LoginPage } from '../pages/auth/LoginPage';
-import { VerifyEmailPage } from '../pages/auth/VerifyEmailPage';
+import { CompleteProfilePage } from '../pages/auth/CompleteProfilePage';
 import { HomePage } from '../pages/home/HomePage';
 import { TimetablePage } from '../pages/timetable/TimetablePage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
+import { AdminTimetablePage } from '../pages/admin/AdminTimetablePage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 
 export const router = createBrowserRouter([
@@ -28,31 +31,38 @@ export const router = createBrowserRouter([
     path: '/welcome',
     element: <WelcomePage />,
   },
+  // Legacy auth routes redirected cleanly to Google Sign-In Welcome flow
   {
     path: '/onboarding',
-    element: <OnboardingPage />,
+    element: <Navigate to="/welcome" replace />,
   },
   {
     path: '/signup',
-    element: <SignupPage />,
+    element: <Navigate to="/welcome" replace />,
   },
   {
     path: '/login',
-    element: <LoginPage />,
+    element: <Navigate to="/welcome" replace />,
   },
   {
     path: '/signin',
-    element: <Navigate to="/login" replace />,
+    element: <Navigate to="/welcome" replace />,
   },
   {
     path: '/join',
-    element: <Navigate to="/signup" replace />,
+    element: <Navigate to="/welcome" replace />,
   },
   {
     path: '/verify-email',
+    element: <Navigate to="/welcome" replace />,
+  },
+  {
+    path: '/complete-profile',
     element: (
       <AuthGuard>
-        <VerifyEmailPage />
+        <ProfileSetupGuard>
+          <CompleteProfilePage />
+        </ProfileSetupGuard>
       </AuthGuard>
     ),
   },
@@ -80,9 +90,19 @@ export const router = createBrowserRouter([
     path: '/profile',
     element: (
       <AuthGuard>
-        <VerifiedEmailGuard>
+        <ProtectedRoute>
           <ProfilePage />
-        </VerifiedEmailGuard>
+        </ProtectedRoute>
+      </AuthGuard>
+    ),
+  },
+  {
+    path: '/admin/timetables',
+    element: (
+      <AuthGuard>
+        <AdminGuard>
+          <AdminTimetablePage />
+        </AdminGuard>
       </AuthGuard>
     ),
   },

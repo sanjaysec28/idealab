@@ -81,6 +81,7 @@ export const HomePage: React.FC = () => {
     () => ({
       fullName: studentProfile?.fullName || user?.displayName || undefined,
       department: studentProfile?.department,
+      degree: studentProfile?.degree,
       academicYear: studentProfile?.currentAcademicYear || studentProfile?.academicYear,
       photoURL: studentProfile?.photoURL || user?.photoURL || undefined,
       avatarPresetId: studentProfile?.avatarPresetId,
@@ -88,9 +89,7 @@ export const HomePage: React.FC = () => {
       phoneNumber: studentProfile?.phoneNumber ?? '',
       whatsappNumber: studentProfile?.whatsappNumber ?? '',
       profileComplete: Boolean(
-        (studentProfile?.fullName || user?.displayName) &&
-          studentProfile?.department &&
-          (studentProfile?.currentAcademicYear || studentProfile?.academicYear)
+        (studentProfile?.fullName || user?.displayName) && studentProfile?.department
       ),
     }),
     [studentProfile, user?.displayName, user?.photoURL]

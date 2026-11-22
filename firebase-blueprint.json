@@ -2,7 +2,7 @@
   "entities": {
     "StudentProfile": {
       "title": "StudentProfile",
-      "description": "IDEA LAB student identity, academic details, and timetable onboarding status.",
+      "description": "IDEA LAB student identity, Google auth metadata, academic details, and single-attempt timetable workflow state.",
       "type": "object",
       "properties": {
         "uid": {
@@ -24,14 +24,19 @@
           "minLength": 5,
           "maxLength": 160,
           "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
-          "description": "Verified student email address."
+          "description": "Verified Google student email address."
+        },
+        "authProvider": {
+          "type": "string",
+          "enum": ["google", "password"],
+          "description": "Authentication provider used by the student."
         },
         "registrationNumber": {
           "type": "string",
           "minLength": 4,
           "maxLength": 32,
           "pattern": "^[A-Za-z0-9\\-]+$",
-          "description": "Optional college registration number."
+          "description": "Unique college registration number (immutable after profile completion)."
         },
         "department": {
           "type": "string",
@@ -39,28 +44,34 @@
           "maxLength": 80,
           "description": "Academic department."
         },
+        "degree": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "description": "Academic degree (e.g., B.E., B.Tech., M.E., M.Tech., MBA, M.C.A.)."
+        },
         "academicYear": {
           "type": "string",
           "minLength": 2,
           "maxLength": 24,
-          "description": "Current academic year (e.g., 3rd Year)."
+          "description": "Optional current academic year (e.g., 3rd Year)."
         },
         "currentAcademicYear": {
           "type": "string",
           "minLength": 2,
           "maxLength": 24,
-          "description": "Academic year displayed on profile & timetable."
+          "description": "Optional academic year displayed on profile & timetable."
         },
         "currentSemester": {
           "type": "string",
           "minLength": 1,
           "maxLength": 24,
-          "description": "Current semester label (e.g., Semester 5)."
+          "description": "Optional current semester label (e.g., Semester 5)."
         },
         "photoURL": {
           "type": "string",
           "maxLength": 1000,
-          "description": "Optional profile photo URL in Firebase Storage or default asset."
+          "description": "Optional profile photo URL in Firebase Storage, Google profile, or default asset."
         },
         "avatarPresetId": {
           "type": "string",
@@ -90,12 +101,12 @@
         "phoneNumber": {
           "type": "string",
           "maxLength": 32,
-          "description": "Optional student contact phone number."
+          "description": "Student contact phone number."
         },
         "whatsappNumber": {
           "type": "string",
           "maxLength": 32,
-          "description": "Optional student WhatsApp number if different from phoneNumber."
+          "description": "Student WhatsApp number for teammate collaboration."
         },
         "skills": {
           "type": "array",
@@ -111,23 +122,53 @@
           "type": "object",
           "description": "Validated LinkedIn, GitHub, and portfolio URLs."
         },
+        "profileSetupCompleted": {
+          "type": "boolean",
+          "description": "True once the mandatory 6-field profile completion step is saved."
+        },
+        "timetableWorkflowState": {
+          "type": "string",
+          "enum": ["not_started", "in_review", "finalized"],
+          "description": "Single-attempt timetable workflow progression."
+        },
+        "timetableAttemptsUsed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Monotonic counter (0 or 1) tracking the single allowed timetable creation attempt."
+        },
+        "timetableWarningAcceptedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the student acknowledged the one-time timetable creation warning."
+        },
+        "timetableLocked": {
+          "type": "boolean",
+          "description": "True once the student confirms final timetable submission; prevents student edits."
+        },
+        "timetableFinalizedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the timetable was permanently finalized."
+        },
+        "timetableLastModifiedBy": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the student or admin who last updated the timetable."
+        },
         "timetableCompleted": {
           "type": "boolean",
-          "description": "True once the student has submitted a valid timetable in Firestore."
+          "description": "True once the student has finalized their timetable in Firestore."
         },
         "timetableStatus": {
           "type": "string",
           "enum": ["not_submitted", "submitted"],
-          "description": "Current student timetable completion state."
+          "description": "Compatibility status flag for finalized timetable completion."
         },
         "timetableUpdatedAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp when the timetable was last submitted."
-        },
-        "profileSetupCompleted": {
-          "type": "boolean",
-          "description": "True once initial academic profile & timetable setup are saved."
+          "description": "Server timestamp when the timetable was last updated."
         },
         "membershipStatus": {
           "type": "string",
@@ -147,9 +188,27 @@
       },
       "required": ["uid", "fullName", "email", "createdAt"]
     },
+    "RegistrationNumberLock": {
+      "title": "RegistrationNumberLock",
+      "description": "Global uniqueness reservation keyed by uppercase normalized registrationNumber.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "createdAt"]
+    },
     "StudentTimetable": {
       "title": "StudentTimetable",
-      "description": "Canonical submitted weekly class timetable for an authenticated student.",
+      "description": "Canonical weekly class timetable for an authenticated student with single-attempt review and permanent lock.",
       "type": "object",
       "properties": {
         "uid": {
@@ -218,19 +277,43 @@
         },
         "submissionStatus": {
           "type": "string",
-          "enum": ["submitted"]
+          "enum": ["in_review", "finalized", "submitted"]
+        },
+        "isLocked": {
+          "type": "boolean"
+        },
+        "attemptNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1
         },
         "version": {
           "type": "integer",
           "minimum": 1
         },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
         "submittedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finalizedAt": {
           "type": "string",
           "format": "date-time"
         },
         "updatedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "lastEditedByUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "lastEditedByRole": {
+          "type": "string",
+          "enum": ["student", "admin"]
         }
       },
       "required": [
@@ -248,8 +331,10 @@
         "classDays",
         "totalClasses",
         "submissionStatus",
+        "isLocked",
+        "attemptNumber",
         "version",
-        "submittedAt",
+        "createdAt",
         "updatedAt"
       ]
     },
@@ -303,6 +388,11 @@
           "minLength": 2,
           "maxLength": 80
         },
+        "degree": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
         "academicYear": {
           "type": "string",
           "minLength": 2,
@@ -350,6 +440,78 @@
         "timetableVersion",
         "updatedAt"
       ]
+    },
+    "TimetableAuditLog": {
+      "title": "TimetableAuditLog",
+      "description": "Immutable audit log tracking warning acknowledgment, initial timetable creation, final lock, and admin corrections.",
+      "type": "object",
+      "properties": {
+        "studentUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "studentEmail": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "studentName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "registrationNumber": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "warning_acknowledged",
+            "timetable_created",
+            "timetable_updated_in_review",
+            "timetable_finalized",
+            "admin_correction"
+          ]
+        },
+        "actorUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "actorEmail": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "actorRole": {
+          "type": "string",
+          "enum": ["student", "admin"]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "previousClasses": {
+          "type": "array",
+          "maxItems": 24
+        },
+        "newClasses": {
+          "type": "array",
+          "maxItems": 24
+        },
+        "previousVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "newVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["studentUid", "action", "actorUid", "actorRole", "timestamp"]
     },
     "CampusProject": {
       "title": "CampusProject",
@@ -485,15 +647,23 @@
   "firestore": {
     "/students/{uid}": {
       "schema": { "$ref": "#/entities/StudentProfile" },
-      "description": "Student profile and timetable completion records keyed by Firebase Auth UID."
+      "description": "Student profile and timetable onboarding/lock records keyed by Firebase Auth UID."
+    },
+    "/registrationNumbers/{regNo}": {
+      "schema": { "$ref": "#/entities/RegistrationNumberLock" },
+      "description": "Unique college registration number reservation keyed by uppercase registration number."
     },
     "/students/{uid}/timetable/{docId}": {
       "schema": { "$ref": "#/entities/StudentTimetable" },
-      "description": "Submitted student timetable stored under docId 'current'."
+      "description": "Student timetable stored under docId 'current' with review/finalized lock state."
     },
     "/students/{uid}/availability/{docId}": {
       "schema": { "$ref": "#/entities/StudentAvailability" },
       "description": "Derived student free-period availability and collaboration opt-in state under docId 'current'."
+    },
+    "/timetableAuditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/TimetableAuditLog" },
+      "description": "Immutable audit trail for timetable warning acknowledgment, creation, final lock, and admin corrections."
     },
     "/projects/{projectId}": {
       "schema": { "$ref": "#/entities/CampusProject" },
@@ -521,7 +691,7 @@
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/AdminRecord" },
-      "description": "Authorized IDEA LAB admin accounts (managed via backend/console)."
+      "description": "Authorized IDEA LAB admin accounts (managed via Firebase Console)."
     }
   }
 }

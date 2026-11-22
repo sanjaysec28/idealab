@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { ArrowRight, CheckCircle2, Home, Info, Lock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import {
+  acknowledgeTimetableWarning,
   clearTimetableDraft,
+  createOrUpdateReviewTimetable,
   DEFAULT_TIMETABLE_ACADEMIC_META,
+  finalizeTimetable,
   loadTimetableDraft,
   saveTimetableDraft,
-  submitFinalTimetableToFirestore,
 } from '../../services/timetableService';
 import {
   ClassFormValues,
@@ -28,11 +31,13 @@ import {
   validateClassForm,
 } from '../../utils/timetableValidation';
 import { TimetableHeader } from '../../components/timetable/TimetableHeader';
+import { TimetableWarningCard } from '../../components/timetable/TimetableWarningCard';
 import { AddClassPanel } from '../../components/timetable/AddClassPanel';
 import { WeeklyTimetable } from '../../components/timetable/WeeklyTimetable';
 import { MyClassesPanel } from '../../components/timetable/MyClassesPanel';
 import { TimetableSummary } from '../../components/timetable/TimetableSummary';
 import { SubmitTimetableCard } from '../../components/timetable/SubmitTimetableCard';
+import { ReadOnlyWeeklyTimetable } from '../../components/profile/ReadOnlyWeeklyTimetable';
 
 const EMPTY_FORM: ClassFormValues = {
   subjectCode: '',
@@ -49,7 +54,7 @@ export const TimetablePage: React.FC = () => {
     studentProfile,
     studentTimetable,
     studentAvailability,
-    studentData,
+    isTimetableLocked,
     refreshStudentData,
   } = useAuth();
   const uid = user?.uid || '';
@@ -62,33 +67,54 @@ export const TimetablePage: React.FC = () => {
     TimetableValidationResult['errors'] | null
   >(null);
 
-  const [isDirtySinceSubmit, setIsDirtySinceSubmit] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDirtySinceSave, setIsDirtySinceSave] = useState(false);
+  const [isAcknowledgingWarning, setIsAcknowledgingWarning] = useState(false);
+  const [warningError, setWarningError] = useState<string | null>(null);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [draftSavedNotice, setDraftSavedNotice] = useState<string | null>(null);
   const hydratedUidRef = useRef<string | null>(null);
 
-  // Hydrate initial timetable: prefer persisted Firestore timetable if submitted;
-  // otherwise load local unsaved draft (which starts empty for new students).
+  const isInReview = Boolean(
+    !isTimetableLocked &&
+      (studentTimetable?.submissionStatus === 'in_review' ||
+        studentProfile?.timetableWorkflowState === 'in_review')
+  );
+  const needsWarning = Boolean(
+    !isTimetableLocked && !isInReview && !studentProfile?.timetableWarningAcceptedAt
+  );
+
+  // Hydrate initial timetable cleanly
   useEffect(() => {
     if (!uid) return;
-    if (hydratedUidRef.current === uid && isDirtySinceSubmit) {
+    if (isTimetableLocked) {
+      if (studentTimetable?.classes) {
+        setClasses(studentTimetable.classes);
+      }
+      setIsDirtySinceSave(false);
+      hydratedUidRef.current = uid;
+      return;
+    }
+
+    if (hydratedUidRef.current === uid && isDirtySinceSave) {
       return;
     }
 
     const draft = loadTimetableDraft(uid);
     if (draft.classes.length > 0) {
       setClasses(draft.classes);
-      setIsDirtySinceSubmit(true);
+      setIsDirtySinceSave(true);
     } else if (studentTimetable?.classes && studentTimetable.classes.length > 0) {
       setClasses(studentTimetable.classes);
-      setIsDirtySinceSubmit(false);
+      setIsDirtySinceSave(false);
     } else if (hydratedUidRef.current !== uid) {
       setClasses([]);
-      setIsDirtySinceSubmit(false);
+      setIsDirtySinceSave(false);
     }
 
     hydratedUidRef.current = uid;
-  }, [uid, studentTimetable, isDirtySinceSubmit]);
+  }, [uid, studentTimetable, isDirtySinceSave, isTimetableLocked]);
 
   const initialAcademicMeta: TimetableAcademicMeta = useMemo(
     () => ({
@@ -110,9 +136,11 @@ export const TimetablePage: React.FC = () => {
   );
 
   const persistLocalDraft = (nextClasses: TimetableClassEntry[]) => {
+    if (isTimetableLocked) return;
     setClasses(nextClasses);
-    setIsDirtySinceSubmit(true);
+    setIsDirtySinceSave(true);
     setSubmitError(null);
+    setDraftSavedNotice(null);
     if (uid) {
       saveTimetableDraft(uid, nextClasses);
     }
@@ -212,10 +240,12 @@ export const TimetablePage: React.FC = () => {
   };
 
   const handleSelectEmptyCell = (day: WeekdayId, slotId: TimeSlotId) => {
+    if (isTimetableLocked) return;
     handleToggleSlot(day, slotId);
   };
 
   const handleEditClass = (entry: TimetableClassEntry) => {
+    if (isTimetableLocked) return;
     setEditingClassId(entry.id);
     setFormValues({
       subjectCode: entry.subjectCode,
@@ -231,6 +261,7 @@ export const TimetablePage: React.FC = () => {
   };
 
   const handleDeleteClass = (classId: string) => {
+    if (isTimetableLocked) return;
     const nextClasses = classes.filter((cls) => cls.id !== classId);
     if (editingClassId === classId) {
       resetForm();
@@ -238,8 +269,9 @@ export const TimetablePage: React.FC = () => {
     persistLocalDraft(nextClasses);
   };
 
-  const handleFinalize = (e: React.FormEvent) => {
+  const handleAddOrUpdateClass = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isTimetableLocked) return;
 
     const validation = validateClassForm(formValues, classes, editingClassId);
     if (!validation.valid) {
@@ -291,111 +323,230 @@ export const TimetablePage: React.FC = () => {
     resetForm();
   };
 
-  const handleClearAll = () => {
+  const handleResetUnsavedEdits = () => {
+    if (isTimetableLocked) return;
     resetForm();
     if (uid) {
       clearTimetableDraft(uid);
     }
-    setClasses([]);
-    setIsDirtySinceSubmit(Boolean(studentTimetable));
+    setClasses(studentTimetable?.classes ?? []);
+    setIsDirtySinceSave(false);
     setSubmitError(null);
+    setDraftSavedNotice(null);
   };
 
-  const handleConfirmSubmit = async (academicMeta: TimetableAcademicMeta) => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-    setSubmitError(null);
+  const handleAcknowledgeWarning = async () => {
+    if (!uid || isAcknowledgingWarning) return;
+    setWarningError(null);
+    setIsAcknowledgingWarning(true);
     try {
-      await submitFinalTimetableToFirestore({
+      await acknowledgeTimetableWarning(uid);
+      await refreshStudentData();
+    } catch (err) {
+      setWarningError(
+        err instanceof Error ? err.message : 'Unable to save confirmation. Please retry.'
+      );
+    } finally {
+      setIsAcknowledgingWarning(false);
+    }
+  };
+
+  const handleSaveDraft = async (academicMeta: TimetableAcademicMeta) => {
+    if (isSavingDraft || isTimetableLocked) return;
+    setIsSavingDraft(true);
+    setSubmitError(null);
+    setDraftSavedNotice(null);
+    try {
+      await createOrUpdateReviewTimetable({
         classes,
         academicMeta,
-        studentFullName: studentData.name,
-        existingProfile: studentProfile,
-        existingTimetable: studentTimetable,
-        existingAvailability: studentAvailability,
       });
+      setIsDirtySinceSave(false);
+      await refreshStudentData();
+      setDraftSavedNotice(
+        'Draft saved to Review Mode. Verify all periods carefully, then click "Final Confirm & Lock" when ready.'
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to save your timetable draft. Please retry.';
+      setSubmitError(message);
+      throw err;
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
 
-      setIsDirtySinceSubmit(false);
+  const handleConfirmFinalize = async (academicMeta: TimetableAcademicMeta) => {
+    if (isFinalizing || isTimetableLocked) return;
+    setIsFinalizing(true);
+    setSubmitError(null);
+    try {
+      await finalizeTimetable({
+        classes,
+        academicMeta,
+      });
+      setIsDirtySinceSave(false);
       await refreshStudentData();
       navigate('/home', { replace: true });
     } catch (err) {
       const message =
         err instanceof Error
           ? err.message
-          : 'Failed to save your timetable to Firestore. Please retry.';
+          : 'Failed to finalize your timetable. Please retry.';
       setSubmitError(message);
       throw err;
     } finally {
-      setIsSubmitting(false);
+      setIsFinalizing(false);
     }
   };
 
   return (
     <div className="min-h-[100dvh] bg-[#FAF8F5] text-[#202124] flex flex-col">
       <TimetableHeader
-        isSubmitted={Boolean(studentTimetable?.submissionStatus === 'submitted' && !isDirtySinceSubmit)}
+        isLocked={isTimetableLocked}
+        isInReview={isInReview}
         hasClasses={classes.length > 0}
-        onClearAll={handleClearAll}
+        onResetUnsavedEdits={handleResetUnsavedEdits}
       />
 
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
-          className="grid grid-cols-1 lg:grid-cols-[minmax(285px,28fr)_minmax(0,46fr)_minmax(265px,26fr)] gap-5 items-start"
-        >
-          {/* LEFT PANEL (28%): Add New Class */}
-          <AddClassPanel
-            formValues={formValues}
-            editingClassId={editingClassId}
-            expandedDays={expandedDays}
-            gridMap={gridMap}
-            validationErrors={validationErrors}
-            onFieldChange={handleFieldChange}
-            onToggleDay={handleToggleDay}
-            onToggleExpandDay={handleToggleExpandDay}
-            onToggleSlot={handleToggleSlot}
-            onClear={resetForm}
-            onFinalize={handleFinalize}
-          />
-
-          {/* CENTRE PANEL (46%): My Weekly Timetable */}
-          <WeeklyTimetable
-            gridMap={gridMap}
-            formScheduleByDay={formValues.scheduleByDay}
-            formSelectedDays={formValues.selectedDays}
-            editingClassId={editingClassId}
-            summary={summary}
-            onSelectEmptyCell={handleSelectEmptyCell}
-            onSelectOccupiedCell={handleEditClass}
-            onResetView={resetForm}
-          />
-
-          {/* RIGHT PANEL (26%): My Classes + Timetable Summary + Submit */}
+        {isTimetableLocked ? (
+          /* LOCKED READ-ONLY VIEW AFTER FINAL CONFIRMATION */
           <div className="space-y-5">
-            <MyClassesPanel
-              classes={classes}
-              editingClassId={editingClassId}
-              onEditClass={handleEditClass}
-              onDeleteClass={handleDeleteClass}
-            />
+            <div className="rounded-[24px] bg-white border border-[#EAE6E1] shadow-xs p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-[#32B878]/12 text-[#1F7A4D] flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-base sm:text-lg font-extrabold text-[#202124]">
+                    Timetable Finalized &amp; Permanently Locked
+                  </h2>
+                  <p className="text-xs sm:text-sm text-[#5F6368] leading-relaxed">
+                    Your semester schedule is locked and synced to your IDEA LAB profile. If any future correction is required, contact an IDEA LAB Admin.
+                  </p>
+                </div>
+              </div>
 
-            <TimetableSummary summary={summary} />
+              <Link
+                to="/home"
+                className="px-5 py-2.5 rounded-full bg-[#E63946] hover:bg-[#D62839] text-white text-xs font-bold shadow-md shadow-[#E63946]/20 inline-flex items-center justify-center gap-2 shrink-0 whitespace-nowrap transition-colors"
+              >
+                <Home className="w-4 h-4" />
+                <span>Go to Dashboard</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
 
-            <SubmitTimetableCard
-              classes={classes}
-              summary={summary}
-              hasConflicts={internalConflicts.length > 0}
-              savedTimetable={studentTimetable}
-              initialAcademicMeta={initialAcademicMeta}
-              isDirtySinceSubmit={isDirtySinceSubmit}
-              isSubmitting={isSubmitting}
-              submitError={submitError}
-              onConfirmSubmit={handleConfirmSubmit}
+            <ReadOnlyWeeklyTimetable
+              timetableDoc={studentTimetable}
+              availabilityDoc={studentAvailability}
+              fallbackSemester={initialAcademicMeta.semester}
+              fallbackAcademicYear={initialAcademicMeta.academicYear}
+              fallbackDepartment={initialAcademicMeta.department}
+              hideBuilderLink
             />
           </div>
-        </motion.div>
+        ) : needsWarning ? (
+          /* STAGE A: ONE-TIME WARNING CARD */
+          <TimetableWarningCard
+            isSubmitting={isAcknowledgingWarning}
+            error={warningError}
+            onAcknowledge={handleAcknowledgeWarning}
+          />
+        ) : (
+          /* STAGE B & C: TIMETABLE BUILDER + DRAFT REVIEW + FINAL LOCK */
+          <div className="space-y-4">
+            <div
+              className={`rounded-2xl border px-4 py-3 flex items-start gap-2.5 text-xs ${
+                isInReview
+                  ? 'bg-[#FFF8EB] border-[#F3DFB6] text-[#92400E]'
+                  : 'bg-white border-[#EAE6E1] text-[#202124]'
+              }`}
+            >
+              {isInReview ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[#B45309]" />
+              ) : (
+                <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#E63946]" />
+              )}
+              <div className="leading-relaxed">
+                {draftSavedNotice ? (
+                  <span className="font-semibold">{draftSavedNotice}</span>
+                ) : isInReview ? (
+                  <span>
+                    <strong>Review Mode (Attempt 1/1 used):</strong> Inspect your classes below and make any edits you need. Once you click <strong>Final Confirm &amp; Lock</strong>, your timetable will be permanently locked.
+                  </span>
+                ) : (
+                  <span>
+                    <strong>Create Timetable (Attempt 1 of 1):</strong> Add all your subjects below, then click <strong>Save Draft &amp; Review Timetable</strong> before permanent finalization.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+              className="grid grid-cols-1 lg:grid-cols-[minmax(285px,28fr)_minmax(0,46fr)_minmax(265px,26fr)] gap-5 items-start"
+            >
+              {/* LEFT PANEL (28%): Add New Class */}
+              <AddClassPanel
+                formValues={formValues}
+                editingClassId={editingClassId}
+                expandedDays={expandedDays}
+                gridMap={gridMap}
+                validationErrors={validationErrors}
+                onFieldChange={handleFieldChange}
+                onToggleDay={handleToggleDay}
+                onToggleExpandDay={handleToggleExpandDay}
+                onToggleSlot={handleToggleSlot}
+                onClear={resetForm}
+                onFinalize={handleAddOrUpdateClass}
+              />
+
+              {/* CENTRE PANEL (46%): My Weekly Timetable */}
+              <WeeklyTimetable
+                gridMap={gridMap}
+                formScheduleByDay={formValues.scheduleByDay}
+                formSelectedDays={formValues.selectedDays}
+                editingClassId={editingClassId}
+                summary={summary}
+                onSelectEmptyCell={handleSelectEmptyCell}
+                onSelectOccupiedCell={handleEditClass}
+                onResetView={resetForm}
+              />
+
+              {/* RIGHT PANEL (26%): My Classes + Timetable Summary + Save/Lock */}
+              <div className="space-y-5">
+                <MyClassesPanel
+                  classes={classes}
+                  editingClassId={editingClassId}
+                  onEditClass={handleEditClass}
+                  onDeleteClass={handleDeleteClass}
+                />
+
+                <TimetableSummary summary={summary} />
+
+                <SubmitTimetableCard
+                  classes={classes}
+                  summary={summary}
+                  hasConflicts={internalConflicts.length > 0}
+                  savedTimetable={studentTimetable}
+                  initialAcademicMeta={initialAcademicMeta}
+                  isDirtySinceSave={isDirtySinceSave}
+                  isSavingDraft={isSavingDraft}
+                  isFinalizing={isFinalizing}
+                  submitError={submitError}
+                  onSaveDraft={handleSaveDraft}
+                  onFinalize={handleConfirmFinalize}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -414,10 +414,9 @@ export function isStudentAvailabilityQualified(
 
   const hasName = typeof doc.fullName === 'string' && doc.fullName.trim().length >= 2;
   const hasDept = typeof doc.department === 'string' && doc.department.trim().length >= 2;
-  const hasYear = typeof doc.academicYear === 'string' && doc.academicYear.trim().length >= 2;
 
   if (doc.profileComplete === false) return false;
-  return hasName && hasDept && hasYear;
+  return hasName && hasDept;
 }
 
 export function getStudentsAvailableForDayAndSlot(
@@ -517,7 +516,7 @@ export function getTodayFreeSlotsFromAvailability(
 }
 
 /**
- * Determines whether a student has a real submitted timetable persisted in Firestore.
+ * Determines whether a student has a finalized or submitted timetable persisted in Firestore.
  */
 export function hasValidStudentTimetable(params: {
   timetableDoc?: StudentTimetableDoc | null;
@@ -525,7 +524,9 @@ export function hasValidStudentTimetable(params: {
 }): boolean {
   if (
     params.timetableDoc &&
-    params.timetableDoc.submissionStatus === 'submitted' &&
+    (params.timetableDoc.submissionStatus === 'finalized' ||
+      params.timetableDoc.submissionStatus === 'submitted' ||
+      params.timetableDoc.isLocked === true) &&
     Array.isArray(params.timetableDoc.classes) &&
     params.timetableDoc.classes.length > 0
   ) {

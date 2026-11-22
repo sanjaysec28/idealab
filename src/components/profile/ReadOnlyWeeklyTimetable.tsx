@@ -26,10 +26,11 @@ interface ReadOnlyWeeklyTimetableProps {
   fallbackSemester: string;
   fallbackAcademicYear: string;
   fallbackDepartment: string;
+  hideBuilderLink?: boolean;
 }
 
 function formatTimetableDate(doc: StudentTimetableDoc | null): string | null {
-  const ts = doc?.updatedAt || doc?.submittedAt;
+  const ts = doc?.finalizedAt || doc?.updatedAt || doc?.submittedAt;
   if (!ts || typeof ts.toDate !== 'function') return null;
   try {
     return ts.toDate().toLocaleDateString('en-US', {
@@ -48,10 +49,17 @@ export const ReadOnlyWeeklyTimetable: React.FC<ReadOnlyWeeklyTimetableProps> = (
   fallbackSemester,
   fallbackAcademicYear,
   fallbackDepartment,
+  hideBuilderLink = false,
 }) => {
   const hasSavedTimetable = useMemo(
     () => hasValidStudentTimetable({ timetableDoc }),
     [timetableDoc]
+  );
+
+  const isPermanentlyLocked = Boolean(
+    timetableDoc?.isLocked ||
+      timetableDoc?.submissionStatus === 'finalized' ||
+      timetableDoc?.submissionStatus === 'submitted'
   );
 
   const classes = useMemo(
@@ -87,7 +95,9 @@ export const ReadOnlyWeeklyTimetable: React.FC<ReadOnlyWeeklyTimetableProps> = (
               </h2>
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[#FAF8F5] border border-[#EAE6E1] text-[11px] font-semibold text-[#777777]">
                 <Lock className="w-3 h-3 text-[#E63946]" />
-                <span>Read-Only View</span>
+                <span>
+                  {isPermanentlyLocked ? 'Permanently Locked' : 'Read-Only View'}
+                </span>
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#777777] mt-1">
@@ -101,7 +111,9 @@ export const ReadOnlyWeeklyTimetable: React.FC<ReadOnlyWeeklyTimetableProps> = (
                   <span aria-hidden="true">·</span>
                   <span className="inline-flex items-center gap-1 text-[#777777]">
                     <Clock className="w-3 h-3 text-[#E63946]" />
-                    <span>Last updated {lastUpdatedLabel}</span>
+                    <span>
+                      {isPermanentlyLocked ? 'Locked on' : 'Last updated'} {lastUpdatedLabel}
+                    </span>
                   </span>
                 </>
               )}
@@ -110,14 +122,25 @@ export const ReadOnlyWeeklyTimetable: React.FC<ReadOnlyWeeklyTimetableProps> = (
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          <Link
-            to="/timetable"
-            className="px-4 py-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#FFF0F1] border border-[#EAE6E1] text-xs font-bold text-[#202020] hover:text-[#E63946] inline-flex items-center gap-2 transition-colors whitespace-nowrap"
-          >
-            <CalendarDays className="w-4 h-4 text-[#E63946]" />
-            <span>{hasSavedTimetable ? 'Update in Timetable Builder' : 'Open Timetable Builder'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          {isPermanentlyLocked ? (
+            <span className="px-3.5 py-2 rounded-xl bg-[#EAF8EE] border border-[#C9EED5] text-[11px] font-bold text-[#177E48] inline-flex items-center gap-1.5 whitespace-nowrap">
+              <Lock className="w-3.5 h-3.5" />
+              <span>Verified &amp; Locked (v{timetableDoc?.version ?? 1})</span>
+            </span>
+          ) : (
+            !hideBuilderLink && (
+              <Link
+                to="/timetable"
+                className="px-4 py-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#FFF0F1] border border-[#EAE6E1] text-xs font-bold text-[#202020] hover:text-[#E63946] inline-flex items-center gap-2 transition-colors whitespace-nowrap"
+              >
+                <CalendarDays className="w-4 h-4 text-[#E63946]" />
+                <span>
+                  {hasSavedTimetable ? 'Review & Finalize Timetable' : 'Create Timetable'}
+                </span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            )
+          )}
         </div>
       </div>
 
@@ -132,19 +155,21 @@ export const ReadOnlyWeeklyTimetable: React.FC<ReadOnlyWeeklyTimetableProps> = (
               Your timetable isn&apos;t available yet.
             </h3>
             <p className="text-xs sm:text-sm text-[#777777] leading-relaxed">
-              Build and save your semester schedule in the IDEA LAB Timetable Builder to display your weekly classes and free collaboration periods here.
+              Build and finalize your semester schedule to display your weekly classes and free collaboration periods here.
             </p>
           </div>
-          <div className="pt-1">
-            <Link
-              to="/timetable"
-              className="px-5 py-3 rounded-xl bg-[#E63946] hover:bg-[#D62839] text-white text-xs sm:text-sm font-bold shadow-md shadow-[#E63946]/25 inline-flex items-center gap-2 transition-colors"
-            >
-              <CalendarDays className="w-4 h-4" />
-              <span>Go to Timetable Builder</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
+          {!hideBuilderLink && (
+            <div className="pt-1">
+              <Link
+                to="/timetable"
+                className="px-5 py-3 rounded-xl bg-[#E63946] hover:bg-[#D62839] text-white text-xs sm:text-sm font-bold shadow-md shadow-[#E63946]/25 inline-flex items-center gap-2 transition-colors"
+              >
+                <CalendarDays className="w-4 h-4" />
+                <span>Create Timetable</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          )}
         </div>
       ) : (
         <>
@@ -285,7 +310,9 @@ export const ReadOnlyWeeklyTimetable: React.FC<ReadOnlyWeeklyTimetableProps> = (
             </div>
 
             <span className="text-[11px] text-[#777777]">
-              Schedule is read-only on your profile • Use Timetable Builder to modify classes
+              {isPermanentlyLocked
+                ? 'Permanently Locked · Contact IDEA LAB Admin for corrections'
+                : 'Schedule is read-only on your profile • Complete final confirmation on Timetable page'}
             </span>
           </div>
         </>

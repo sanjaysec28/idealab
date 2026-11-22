@@ -281,7 +281,7 @@ export const AvailabilityDiscoveryModal: React.FC<AvailabilityDiscoveryModalProp
                 <div className="space-y-2.5">
                   {filteredPeers.map(({ peer, daySlotIds, commonSlotIds }) => {
                     const peerName = peer.fullName || 'IDEA Lab Member';
-                    const peerMeta = [peer.department, peer.academicYear]
+                    const peerMeta = [peer.degree, peer.department, peer.academicYear]
                       .filter(Boolean)
                       .join(' · ') || 'Saveetha Engineering College';
                     const peerAvatar = resolveProfileAvatarUrl({
@@ -391,7 +391,7 @@ export const AvailabilityDiscoveryModal: React.FC<AvailabilityDiscoveryModalProp
             className="inline-flex items-center gap-1.5 text-xs font-bold text-[#E63946] hover:underline"
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Update Your Timetable</span>
+            <span>View My Timetable</span>
           </Link>
         </div>
       </div>

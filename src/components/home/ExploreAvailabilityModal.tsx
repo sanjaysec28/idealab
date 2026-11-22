@@ -423,15 +423,11 @@ export const ExploreAvailabilityModal: React.FC<ExploreAvailabilityModalProps> =
                         </div>
 
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[#5F6368]">
-                          {student.department && (
-                            <span className="truncate">{student.department}</span>
-                          )}
-                          {student.department && student.academicYear && (
-                            <span aria-hidden="true">·</span>
-                          )}
-                          {student.academicYear && (
-                            <span className="whitespace-nowrap">{student.academicYear}</span>
-                          )}
+                          <span>
+                            {[student.degree, student.department, student.academicYear]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
                         </div>
 
                         <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-[#202020] tabular-nums">
@@ -506,7 +502,7 @@ export const ExploreAvailabilityModal: React.FC<ExploreAvailabilityModalProps> =
             onClick={onClose}
             className="text-xs font-bold text-[#E63946] hover:underline whitespace-nowrap"
           >
-            Update Timetable →
+            View My Timetable →
           </Link>
         </div>
       </div>

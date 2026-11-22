@@ -15,8 +15,8 @@ export const NotFoundPage: React.FC = () => {
       ? 'Go to Home'
       : primaryPath === '/timetable'
         ? 'Go to Timetable'
-        : primaryPath === '/verify-email'
-          ? 'Verify Email'
+        : primaryPath === '/complete-profile'
+          ? 'Complete Profile'
           : 'Back to Welcome';
 
   return (

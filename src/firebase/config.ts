@@ -1,5 +1,5 @@
 import { FirebaseOptions, initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { browserLocalPersistence, getAuth, setPersistence } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import appletFirebaseConfig from '../../firebase-applet-config.json';
@@ -41,6 +41,11 @@ export const app = initializeApp(resolvedConfig);
 export const db = getFirestore(app, FIRESTORE_DATABASE_ID);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+export const authPersistenceReady: Promise<void> =
+  typeof window !== 'undefined'
+    ? setPersistence(auth, browserLocalPersistence).catch(() => undefined)
+    : Promise.resolve();
 
 export async function verifyFirestoreConnection(): Promise<boolean> {
   try {

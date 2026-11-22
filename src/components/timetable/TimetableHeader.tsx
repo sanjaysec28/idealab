@@ -1,14 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, ChevronDown, LogOut, CheckCircle2, Home, Trash2, User } from 'lucide-react';
+import {
+  Bell,
+  ChevronDown,
+  LogOut,
+  CheckCircle2,
+  Home,
+  Lock,
+  RotateCcw,
+  User,
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { IdeaLabLogo } from '../shared/IdeaLabLogo';
 import { resolveProfileAvatarUrl } from '../../utils/assets';
 
 interface TimetableHeaderProps {
-  isSubmitted: boolean;
+  isLocked: boolean;
+  isInReview: boolean;
   hasClasses: boolean;
-  onClearAll: () => void;
+  onResetUnsavedEdits?: () => void;
 }
 
 function getInitials(name: string): string {
@@ -19,9 +29,10 @@ function getInitials(name: string): string {
 }
 
 export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
-  isSubmitted,
+  isLocked,
+  isInReview,
   hasClasses,
-  onClearAll,
+  onResetUnsavedEdits,
 }) => {
   const navigate = useNavigate();
   const { user, studentProfile, studentData, hasCompletedTimetable, signOut } = useAuth();
@@ -32,7 +43,7 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
 
   const displayName = studentProfile?.fullName || user?.displayName || studentData.name;
   const displayEmail = studentProfile?.email || user?.email || studentData.email;
-  const academicSubtitle = `${studentData.department} • ${studentData.year}`;
+  const academicSubtitle = `${studentData.department}${studentData.degree ? ` • ${studentData.degree}` : ''}`;
   const resolvedAvatarUrl = resolveProfileAvatarUrl({
     photoURL: studentProfile?.photoURL || user?.photoURL,
     avatarPresetId: studentProfile?.avatarPresetId,
@@ -75,16 +86,30 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
           <div className="hidden sm:block min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-base lg:text-lg font-bold tracking-tight text-[#202124] truncate">
-                Timetable Builder
+                {isLocked ? 'My Weekly Timetable' : 'Timetable Setup'}
               </h1>
+              {isLocked ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#32B878]/12 text-[#1F7A4D] text-[10px] font-bold">
+                  <Lock className="w-3 h-3" />
+                  <span>Locked</span>
+                </span>
+              ) : isInReview ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FFF8EB] text-[#92400E] border border-[#F3DFB6] text-[10px] font-bold">
+                  Review Draft
+                </span>
+              ) : null}
             </div>
             <p className="text-xs text-[#777777] truncate">
-              Create and manage your class timetable for this semester.
+              {isLocked
+                ? 'Finalized semester timetable (Admin-only edits).'
+                : isInReview
+                ? 'Review your classes carefully, then confirm to lock permanently.'
+                : 'One-time semester timetable creation for IDEA LAB.'}
             </p>
           </div>
         </div>
 
-        {/* RIGHT: Back to Home (when already completed) + Notification Bell + Profile Pill */}
+        {/* RIGHT: Back to Home (when finalized) + Notification Bell + Profile Pill */}
         <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
           {hasCompletedTimetable && (
             <Link
@@ -108,7 +133,9 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
               className="w-10 h-10 rounded-xl bg-[#FAF8F5] hover:bg-[#F5F1EC] border border-[#EAE6E1] flex items-center justify-center text-[#777777] hover:text-[#202124] transition-colors relative cursor-pointer"
             >
               <Bell className="w-4 h-4" />
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-[#E63946] ring-2 ring-[#FAF8F5]" />
+              {!isLocked && (
+                <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-[#E63946] ring-2 ring-[#FAF8F5]" />
+              )}
             </button>
 
             {showNotifications && (
@@ -116,29 +143,33 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
                 <div className="flex items-center justify-between border-b border-[#EAE6E1] pb-2.5">
                   <span className="text-xs font-bold text-[#202124]">Timetable Status</span>
                   <span className="text-[10px] font-semibold text-[#177E48] bg-[#EAF8EE] px-2 py-0.5 rounded-full">
-                    Live Sync
+                    {isLocked ? 'Locked' : isInReview ? 'In Review' : 'Pending'}
                   </span>
                 </div>
                 <div className="space-y-2.5 text-xs">
                   <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#EAE6E1]">
-                    <p className="font-semibold text-[#202124]">Email Verified</p>
-                    <p className="text-[11px] text-[#777777] mt-0.5">
+                    <p className="font-semibold text-[#202124]">Google Account Verified</p>
+                    <p className="text-[11px] text-[#777777] mt-0.5 truncate">
                       Signed in as {displayEmail}
                     </p>
                   </div>
                   <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#EAE6E1]">
                     <p className="font-semibold text-[#202124]">
-                      {isSubmitted
-                        ? 'Timetable Saved'
+                      {isLocked
+                        ? 'Timetable Finalized & Locked'
+                        : isInReview
+                        ? 'Ready for Final Confirmation'
                         : hasClasses
-                        ? 'Ready to Submit'
+                        ? 'Save Draft to Review'
                         : 'Add Your Classes'}
                     </p>
                     <p className="text-[11px] text-[#777777] mt-0.5">
-                      {isSubmitted
-                        ? 'Your semester timetable is saved to your IDEA LAB profile.'
+                      {isLocked
+                        ? 'Contact IDEA LAB Admin if any timetable correction is needed.'
+                        : isInReview
+                        ? 'Click Final Confirm & Lock once you verify all classes.'
                         : hasClasses
-                        ? 'Click Submit Final Timetable to save your schedule and continue to IDEA LAB Home.'
+                        ? 'Click Save Draft & Review Timetable to review before locking.'
                         : 'Add classes on the left panel or click any + period in the grid.'}
                     </p>
                   </div>
@@ -194,42 +225,47 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
                   <p className="text-[11px] text-[#777777] truncate mt-0.5">{displayEmail}</p>
                   <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-[#1F7A4D] bg-[#32B878]/10 px-2 py-0.5 rounded-full">
                     <CheckCircle2 className="w-3 h-3" />
-                    <span>Verified Account</span>
+                    <span>Google Verified</span>
                   </div>
                 </div>
 
                 <div className="py-1.5 space-y-0.5">
-                  <Link
-                    to="/profile"
-                    onClick={() => setShowProfileMenu(false)}
-                    className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2"
-                  >
-                    <User className="w-3.5 h-3.5 text-[#777777]" />
-                    <span>My Profile</span>
-                  </Link>
-
                   {hasCompletedTimetable && (
-                    <Link
-                      to="/home"
-                      onClick={() => setShowProfileMenu(false)}
-                      className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2"
-                    >
-                      <Home className="w-3.5 h-3.5 text-[#777777]" />
-                      <span>IDEA LAB Home</span>
-                    </Link>
+                    <>
+                      <Link
+                        to="/home"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2"
+                      >
+                        <Home className="w-3.5 h-3.5 text-[#777777]" />
+                        <span>IDEA LAB Home</span>
+                      </Link>
+                      <Link
+                        to="/profile"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2"
+                      >
+                        <User className="w-3.5 h-3.5 text-[#777777]" />
+                        <span>My Profile</span>
+                      </Link>
+                    </>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClearAll();
-                      setShowProfileMenu(false);
-                    }}
-                    className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-[#777777]" />
-                    <span>Clear Unsaved Grid</span>
-                  </button>
+                  {!isLocked && onResetUnsavedEdits && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onResetUnsavedEdits();
+                        setShowProfileMenu(false);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl text-left text-xs font-medium text-[#202124] hover:bg-[#FAF8F5] flex items-center gap-2 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-[#777777]" />
+                      <span>
+                        {isInReview ? 'Revert Unsaved Edits' : 'Clear Unsaved Draft'}
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="pt-1 border-t border-[#EAE6E1]">
@@ -246,24 +282,6 @@ export const TimetableHeader: React.FC<TimetableHeaderProps> = ({
             )}
           </div>
         </div>
-      </div>
-
-      {/* Mobile compact title strip */}
-      <div className="sm:hidden px-4 pb-3 pt-1 flex items-center justify-between gap-2 border-t border-[#EAE6E1]/60 bg-[#FAF8F5]/60">
-        <div>
-          <h1 className="text-sm font-bold text-[#202124]">Timetable Builder</h1>
-          <p className="text-[11px] text-[#777777]">
-            Create and manage your semester schedule
-          </p>
-        </div>
-        {hasCompletedTimetable && (
-          <Link
-            to="/home"
-            className="px-2.5 py-1 rounded-xl bg-white border border-[#EAE6E1] text-[11px] font-semibold text-[#202124] shrink-0"
-          >
-            Home
-          </Link>
-        )}
       </div>
     </header>
   );

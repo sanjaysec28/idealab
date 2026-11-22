@@ -1,16 +1,17 @@
 import {
+  collection,
   collectionGroup,
   doc,
   getDoc,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
-  writeBatch,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
-import { assertValidEmailAddress, clearSignupDraft } from '../firebase/authService';
+import { assertValidEmailAddress } from '../firebase/authService';
 import { handleFirestoreError, OperationType } from '../firebase/errorHandling';
 import { StudentProfileDoc } from '../types/auth';
 import {
@@ -45,7 +46,7 @@ export interface LocalTimetableDraft {
 }
 
 /**
- * Local draft cache ONLY for unsaved edits in progress.
+ * Local draft cache ONLY for unsaved UI edits while constructing a timetable.
  * Never returns sample/demo classes as a real student's timetable.
  */
 export function loadTimetableDraft(uid: string): LocalTimetableDraft {
@@ -168,6 +169,7 @@ export function subscribeToStudentAvailability(
 export interface AvailabilityPublicMetadataInput {
   fullName?: string;
   department?: string;
+  degree?: string;
   academicYear?: string;
   photoURL?: string;
   avatarPresetId?: string;
@@ -177,7 +179,7 @@ export interface AvailabilityPublicMetadataInput {
   profileComplete?: boolean;
 }
 
-function sanitizeAvailabilityPublicMetadata(
+export function sanitizeAvailabilityPublicMetadata(
   input: AvailabilityPublicMetadataInput
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {
@@ -190,6 +192,10 @@ function sanitizeAvailabilityPublicMetadata(
   const cleanDept = input.department?.trim().slice(0, 80);
   if (cleanDept && cleanDept.length >= 2) {
     result.department = cleanDept;
+  }
+  const cleanDegree = input.degree?.trim().slice(0, 40);
+  if (cleanDegree && cleanDegree.length >= 2) {
+    result.degree = cleanDegree;
   }
   const cleanYear = input.academicYear?.trim().slice(0, 24);
   if (cleanYear && cleanYear.length >= 2) {
@@ -257,7 +263,9 @@ export function subscribeToOptedInAvailability(
   );
 }
 
-function sanitizeClassesForFirestore(classes: TimetableClassEntry[]): TimetableClassEntry[] {
+export function sanitizeClassesForFirestore(
+  classes: TimetableClassEntry[]
+): TimetableClassEntry[] {
   const validDaySet = new Set<WeekdayId>(WEEKDAYS.map((d) => d.id));
   const validSlotSet = new Set<TimeSlotId>(TIME_SLOTS.map((s) => s.id));
 
@@ -288,105 +296,7 @@ function sanitizeClassesForFirestore(classes: TimetableClassEntry[]): TimetableC
   });
 }
 
-export async function submitFinalTimetableToFirestore(params: {
-  classes: TimetableClassEntry[];
-  academicMeta?: Partial<TimetableAcademicMeta>;
-  studentFullName?: string;
-  existingProfile?: StudentProfileDoc | null;
-  existingTimetable?: StudentTimetableDoc | null;
-  existingAvailability?: StudentAvailabilityDoc | null;
-}): Promise<TimetableSubmissionRecord> {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Your session expired. Please sign in again to save your timetable.');
-  }
-
-  await currentUser.reload();
-  const refreshedUser = auth.currentUser || currentUser;
-
-  if (!refreshedUser.emailVerified) {
-    throw new Error('Please verify your email address before submitting your timetable.');
-  }
-
-  const tokenResult = await refreshedUser.getIdTokenResult();
-  if (!tokenResult.claims.email_verified) {
-    await refreshedUser.getIdToken(true);
-  }
-
-  const verifiedEmail = assertValidEmailAddress(refreshedUser.email);
-  const uid = refreshedUser.uid;
-
-  if (!Array.isArray(params.classes) || params.classes.length === 0) {
-    throw new Error('Add at least one class before submitting your timetable.');
-  }
-
-  const cleanClasses = sanitizeClassesForFirestore(params.classes);
-  const conflicts = detectTimetableInternalConflicts(cleanClasses);
-  if (conflicts.length > 0) {
-    throw new Error('Resolve all schedule conflicts before submitting your timetable.');
-  }
-
-  const summary = calculateTimetableSummary(cleanClasses);
-  if (summary.totalClasses === 0 || summary.totalSubjects === 0) {
-    throw new Error('Select at least one weekday and time slot before submitting.');
-  }
-
-  const existingProfile =
-    params.existingProfile !== undefined
-      ? params.existingProfile
-      : await getDoc(doc(db, 'students', uid)).then((snap) =>
-          snap.exists() ? (snap.data() as StudentProfileDoc) : null
-        );
-
-  const existingTimetable =
-    params.existingTimetable !== undefined
-      ? params.existingTimetable
-      : await getStudentTimetable(uid);
-
-  const existingAvailability =
-    params.existingAvailability !== undefined
-      ? params.existingAvailability
-      : await getStudentAvailability(uid);
-
-  const nextVersion = (existingTimetable?.version ?? 0) + 1;
-
-  const department = (
-    params.academicMeta?.department ||
-    existingProfile?.department ||
-    DEFAULT_TIMETABLE_ACADEMIC_META.department
-  )
-    .trim()
-    .slice(0, 80);
-
-  const academicYear = (
-    params.academicMeta?.academicYear ||
-    existingProfile?.currentAcademicYear ||
-    existingProfile?.academicYear ||
-    DEFAULT_TIMETABLE_ACADEMIC_META.academicYear
-  )
-    .trim()
-    .slice(0, 24);
-
-  const semester = (
-    params.academicMeta?.semester ||
-    existingProfile?.currentSemester ||
-    DEFAULT_TIMETABLE_ACADEMIC_META.semester
-  )
-    .trim()
-    .slice(0, 24);
-
-  const resolvedFullName = (
-    existingProfile?.fullName ||
-    params.studentFullName ||
-    refreshedUser.displayName ||
-    verifiedEmail.split('@')[0] ||
-    'IDEA Lab Student'
-  )
-    .trim()
-    .slice(0, 100);
-
-  const safeFullName = resolvedFullName.length >= 2 ? resolvedFullName : 'IDEA Lab Student';
-
+export function extractTimetableAggregates(cleanClasses: TimetableClassEntry[]) {
   const selectedWeekdays = WEEKDAYS.map((d) => d.id).filter((day) =>
     cleanClasses.some((cls) => (cls.scheduleByDay[day]?.length ?? 0) > 0)
   );
@@ -399,122 +309,514 @@ export async function submitFinalTimetableToFirestore(params: {
   const subjectNames = Array.from(new Set(cleanClasses.map((c) => c.subjectName))).slice(0, 24);
   const facultyNames = Array.from(new Set(cleanClasses.map((c) => c.facultyName))).slice(0, 24);
 
-  const derivedAvailability = calculateDerivedAvailability({
-    uid,
-    classes: cleanClasses,
-    timetableVersion: nextVersion,
-    isOptedIn: existingAvailability?.isOptedIn ?? false,
-  });
-
-  const canKeepOptIn =
-    Boolean(existingAvailability?.isOptedIn) && derivedAvailability.totalFreePeriods > 0;
-
-  const publicMetadata = sanitizeAvailabilityPublicMetadata({
-    fullName: safeFullName,
-    department,
-    academicYear,
-    photoURL: existingProfile?.photoURL ?? refreshedUser.photoURL ?? undefined,
-    avatarPresetId: existingProfile?.avatarPresetId,
-    skills: existingProfile?.skills,
-    phoneNumber: existingProfile?.phoneNumber ?? '',
-    whatsappNumber: existingProfile?.whatsappNumber ?? '',
-    profileComplete: Boolean(
-      safeFullName.length >= 2 && department.length >= 2 && academicYear.length >= 2
-    ),
-  });
-
-  const batch = writeBatch(db);
-  const timetableRef = doc(db, 'students', uid, 'timetable', 'current');
-  const availabilityRef = doc(db, 'students', uid, 'availability', 'current');
-  const studentRef = doc(db, 'students', uid);
-
-  batch.set(timetableRef, {
-    uid,
-    semester,
-    academicYear,
-    department,
-    classes: cleanClasses,
+  return {
     selectedWeekdays,
     selectedTimeSlots,
     subjectCodes,
     subjectNames,
     facultyNames,
-    totalSubjects: summary.totalSubjects,
-    classDays: summary.classDays,
-    totalClasses: summary.totalClasses,
-    submissionStatus: 'submitted',
-    version: nextVersion,
-    submittedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  };
+}
 
-  batch.set(availabilityRef, {
-    ...derivedAvailability,
-    isOptedIn: canKeepOptIn,
-    ...publicMetadata,
-    updatedAt: serverTimestamp(),
-  });
-
-  const cleanPhotoUrl =
-    refreshedUser.photoURL && refreshedUser.photoURL.trim().length > 0
-      ? refreshedUser.photoURL.trim().slice(0, 500)
-      : undefined;
-
-  if (existingProfile) {
-    batch.update(studentRef, {
-      fullName: safeFullName,
-      department,
-      academicYear,
-      currentAcademicYear: academicYear,
-      currentSemester: semester,
-      ...(cleanPhotoUrl ? { photoURL: cleanPhotoUrl } : {}),
-      timetableCompleted: true,
-      timetableStatus: 'submitted',
-      timetableUpdatedAt: serverTimestamp(),
-      profileSetupCompleted: true,
-      updatedAt: serverTimestamp(),
-    });
-  } else {
-    batch.set(studentRef, {
-      uid,
-      fullName: safeFullName,
-      email: verifiedEmail,
-      department,
-      academicYear,
-      currentAcademicYear: academicYear,
-      currentSemester: semester,
-      ...(cleanPhotoUrl ? { photoURL: cleanPhotoUrl } : {}),
-      timetableCompleted: true,
-      timetableStatus: 'submitted',
-      timetableUpdatedAt: serverTimestamp(),
-      profileSetupCompleted: true,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+/**
+ * Stage A: Acknowledge one-time timetable creation warning without consuming the attempt.
+ */
+export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.uid !== uid) {
+    throw new Error('Your session expired. Please sign in again.');
   }
 
+  const studentRef = doc(db, 'students', uid);
+  const auditRef = doc(collection(db, 'timetableAuditLogs'));
+  const docPath = `students/${uid}`;
+
   try {
-    await batch.commit();
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(studentRef);
+      if (!snap.exists()) {
+        throw new Error('Please complete your student profile before continuing.');
+      }
+
+      const data = snap.data() as StudentProfileDoc;
+      if (data.profileSetupCompleted !== true) {
+        throw new Error('Please complete your student profile before continuing.');
+      }
+
+      if (data.timetableWarningAcceptedAt) {
+        return; // Already acknowledged (idempotent)
+      }
+
+      tx.update(studentRef, {
+        timetableWarningAcceptedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      tx.set(auditRef, {
+        studentUid: uid,
+        ...(data.email ? { studentEmail: data.email } : {}),
+        ...(data.fullName ? { studentName: data.fullName } : {}),
+        ...(data.registrationNumber ? { registrationNumber: data.registrationNumber } : {}),
+        action: 'warning_acknowledged',
+        actorUid: uid,
+        ...(currentUser.email ? { actorEmail: currentUser.email } : {}),
+        actorRole: 'student',
+        timestamp: serverTimestamp(),
+      });
+    });
   } catch (error) {
-    handleFirestoreError(
-      error,
-      existingProfile ? OperationType.UPDATE : OperationType.CREATE,
-      `students/${uid}/timetable/current`
-    );
+    handleFirestoreError(error, OperationType.UPDATE, docPath);
+  }
+}
+
+/**
+ * Stage B: Create draft timetable (uses 1/1 attempt) or update existing draft while in 'in_review'.
+ * Enforces single attempt and rejects once timetable is locked/finalized.
+ */
+export async function createOrUpdateReviewTimetable(params: {
+  classes: TimetableClassEntry[];
+  academicMeta?: Partial<TimetableAcademicMeta>;
+}): Promise<TimetableSubmissionRecord> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error('Your session expired. Please sign in again to save your timetable.');
+  }
+
+  const uid = currentUser.uid;
+  assertValidEmailAddress(currentUser.email);
+
+  if (!Array.isArray(params.classes) || params.classes.length === 0) {
+    throw new Error('Add at least one class before saving your timetable draft.');
+  }
+
+  const cleanClasses = sanitizeClassesForFirestore(params.classes);
+  const conflicts = detectTimetableInternalConflicts(cleanClasses);
+  if (conflicts.length > 0) {
+    throw new Error('Resolve all schedule conflicts before saving your timetable.');
+  }
+
+  const summary = calculateTimetableSummary(cleanClasses);
+  if (summary.totalClasses === 0 || summary.totalSubjects === 0) {
+    throw new Error('Select at least one weekday and time slot before saving.');
+  }
+
+  const studentRef = doc(db, 'students', uid);
+  const timetableRef = doc(db, 'students', uid, 'timetable', 'current');
+  const auditRef = doc(collection(db, 'timetableAuditLogs'));
+  const docPath = `students/${uid}/timetable/current`;
+
+  let savedVersion = 1;
+  let resolvedDepartment = DEFAULT_TIMETABLE_ACADEMIC_META.department;
+  let resolvedAcademicYear = DEFAULT_TIMETABLE_ACADEMIC_META.academicYear;
+  let resolvedSemester = DEFAULT_TIMETABLE_ACADEMIC_META.semester;
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const [studentSnap, timetableSnap] = await Promise.all([
+        tx.get(studentRef),
+        tx.get(timetableRef),
+      ]);
+
+      if (!studentSnap.exists()) {
+        throw new Error('Complete your student profile before creating your timetable.');
+      }
+
+      const student = studentSnap.data() as StudentProfileDoc;
+      if (student.profileSetupCompleted !== true) {
+        throw new Error('Complete your student profile before creating your timetable.');
+      }
+      if (!student.timetableWarningAcceptedAt) {
+        throw new Error('Please acknowledge the one-time timetable notice first.');
+      }
+
+      if (student.timetableLocked === true || student.timetableWorkflowState === 'finalized') {
+        throw new Error(
+          'Your timetable is permanently locked and cannot be edited by students. Contact IDEA LAB Admin if a correction is needed.'
+        );
+      }
+
+      const existingTimetable = timetableSnap.exists()
+        ? (timetableSnap.data() as StudentTimetableDoc)
+        : null;
+
+      if (
+        existingTimetable &&
+        (existingTimetable.isLocked === true ||
+          existingTimetable.submissionStatus === 'finalized' ||
+          existingTimetable.submissionStatus === 'submitted')
+      ) {
+        throw new Error(
+          'Your timetable has already been finalized and locked. Contact IDEA LAB Admin if a correction is needed.'
+        );
+      }
+
+      const isFirstCreation = !existingTimetable;
+      if (isFirstCreation && (student.timetableAttemptsUsed ?? 0) >= 1) {
+        throw new Error(
+          'Your one-time timetable creation attempt has already been used.'
+        );
+      }
+
+      resolvedDepartment = (
+        params.academicMeta?.department ||
+        student.department ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.department
+      )
+        .trim()
+        .slice(0, 80);
+
+      resolvedAcademicYear = (
+        params.academicMeta?.academicYear ||
+        student.currentAcademicYear ||
+        student.academicYear ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.academicYear
+      )
+        .trim()
+        .slice(0, 24);
+
+      resolvedSemester = (
+        params.academicMeta?.semester ||
+        student.currentSemester ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.semester
+      )
+        .trim()
+        .slice(0, 24);
+
+      const aggregates = extractTimetableAggregates(cleanClasses);
+      savedVersion = existingTimetable ? existingTimetable.version + 1 : 1;
+
+      if (isFirstCreation) {
+        tx.set(timetableRef, {
+          uid,
+          semester: resolvedSemester,
+          academicYear: resolvedAcademicYear,
+          department: resolvedDepartment,
+          classes: cleanClasses,
+          ...aggregates,
+          totalSubjects: summary.totalSubjects,
+          classDays: summary.classDays,
+          totalClasses: summary.totalClasses,
+          submissionStatus: 'in_review',
+          isLocked: false,
+          attemptNumber: 1,
+          version: 1,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          lastEditedByUid: uid,
+          lastEditedByRole: 'student',
+        });
+
+        tx.update(studentRef, {
+          department: resolvedDepartment,
+          academicYear: resolvedAcademicYear,
+          currentAcademicYear: resolvedAcademicYear,
+          currentSemester: resolvedSemester,
+          timetableWorkflowState: 'in_review',
+          timetableAttemptsUsed: 1,
+          timetableLocked: false,
+          timetableLastModifiedBy: uid,
+          timetableUpdatedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        tx.set(auditRef, {
+          studentUid: uid,
+          studentEmail: student.email,
+          studentName: student.fullName,
+          ...(student.registrationNumber ? { registrationNumber: student.registrationNumber } : {}),
+          action: 'timetable_created',
+          actorUid: uid,
+          ...(currentUser.email ? { actorEmail: currentUser.email } : {}),
+          actorRole: 'student',
+          newClasses: cleanClasses,
+          previousVersion: 0,
+          newVersion: 1,
+          timestamp: serverTimestamp(),
+        });
+      } else {
+        tx.update(timetableRef, {
+          semester: resolvedSemester,
+          academicYear: resolvedAcademicYear,
+          department: resolvedDepartment,
+          classes: cleanClasses,
+          ...aggregates,
+          totalSubjects: summary.totalSubjects,
+          classDays: summary.classDays,
+          totalClasses: summary.totalClasses,
+          submissionStatus: 'in_review',
+          isLocked: false,
+          version: savedVersion,
+          updatedAt: serverTimestamp(),
+          lastEditedByUid: uid,
+          lastEditedByRole: 'student',
+        });
+
+        tx.update(studentRef, {
+          department: resolvedDepartment,
+          academicYear: resolvedAcademicYear,
+          currentAcademicYear: resolvedAcademicYear,
+          currentSemester: resolvedSemester,
+          timetableWorkflowState: 'in_review',
+          timetableLastModifiedBy: uid,
+          timetableUpdatedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('locked') ||
+        error.message.includes('attempt') ||
+        error.message.includes('profile') ||
+        error.message.includes('notice'))
+    ) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.WRITE, docPath);
   }
 
   clearTimetableDraft(uid);
-  clearSignupDraft(uid);
 
   return {
-    submissionId: `TT-V${nextVersion}-${uid.slice(0, 6).toUpperCase()}`,
+    submissionId: `TT-DRAFT-V${savedVersion}-${uid.slice(0, 6).toUpperCase()}`,
     mode: 'firestore',
-    version: nextVersion,
+    version: savedVersion,
     submittedAt: new Date().toISOString(),
     studentUid: uid,
-    semester,
-    academicYear,
-    department,
+    semester: resolvedSemester,
+    academicYear: resolvedAcademicYear,
+    department: resolvedDepartment,
+    classes: cleanClasses,
+    summary,
+  };
+}
+
+/**
+ * Stage C: Permanently finalize and lock student timetable, generate derived availability,
+ * and write immutable audit log entry.
+ */
+export async function finalizeTimetable(params: {
+  classes: TimetableClassEntry[];
+  academicMeta?: Partial<TimetableAcademicMeta>;
+}): Promise<TimetableSubmissionRecord> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error('Your session expired. Please sign in again to finalize your timetable.');
+  }
+
+  const uid = currentUser.uid;
+  assertValidEmailAddress(currentUser.email);
+
+  if (!Array.isArray(params.classes) || params.classes.length === 0) {
+    throw new Error('Add at least one class before finalizing your timetable.');
+  }
+
+  const cleanClasses = sanitizeClassesForFirestore(params.classes);
+  const conflicts = detectTimetableInternalConflicts(cleanClasses);
+  if (conflicts.length > 0) {
+    throw new Error('Resolve all schedule conflicts before finalizing your timetable.');
+  }
+
+  const summary = calculateTimetableSummary(cleanClasses);
+  if (summary.totalClasses === 0 || summary.totalSubjects === 0) {
+    throw new Error('Select at least one weekday and time slot before finalizing.');
+  }
+
+  const studentRef = doc(db, 'students', uid);
+  const timetableRef = doc(db, 'students', uid, 'timetable', 'current');
+  const availabilityRef = doc(db, 'students', uid, 'availability', 'current');
+  const auditRef = doc(collection(db, 'timetableAuditLogs'));
+  const docPath = `students/${uid}/timetable/current`;
+
+  let finalVersion = 1;
+  let resolvedDepartment = DEFAULT_TIMETABLE_ACADEMIC_META.department;
+  let resolvedAcademicYear = DEFAULT_TIMETABLE_ACADEMIC_META.academicYear;
+  let resolvedSemester = DEFAULT_TIMETABLE_ACADEMIC_META.semester;
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const [studentSnap, timetableSnap, availSnap] = await Promise.all([
+        tx.get(studentRef),
+        tx.get(timetableRef),
+        tx.get(availabilityRef),
+      ]);
+
+      if (!studentSnap.exists()) {
+        throw new Error('Complete your student profile before finalizing your timetable.');
+      }
+
+      const student = studentSnap.data() as StudentProfileDoc;
+      if (student.profileSetupCompleted !== true) {
+        throw new Error('Complete your student profile before finalizing your timetable.');
+      }
+      if (!student.timetableWarningAcceptedAt) {
+        throw new Error('Please acknowledge the one-time timetable notice first.');
+      }
+
+      if (student.timetableLocked === true || student.timetableWorkflowState === 'finalized') {
+        throw new Error('Your timetable is already finalized and locked.');
+      }
+
+      const existingTimetable = timetableSnap.exists()
+        ? (timetableSnap.data() as StudentTimetableDoc)
+        : null;
+
+      if (
+        existingTimetable &&
+        (existingTimetable.isLocked === true ||
+          existingTimetable.submissionStatus === 'finalized' ||
+          existingTimetable.submissionStatus === 'submitted')
+      ) {
+        throw new Error('Your timetable is already finalized and locked.');
+      }
+
+      if (!existingTimetable) {
+        throw new Error(
+          'Please save your timetable draft to Review before confirming permanent finalization.'
+        );
+      }
+
+      resolvedDepartment = (
+        params.academicMeta?.department ||
+        student.department ||
+        existingTimetable.department ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.department
+      )
+        .trim()
+        .slice(0, 80);
+
+      resolvedAcademicYear = (
+        params.academicMeta?.academicYear ||
+        student.currentAcademicYear ||
+        student.academicYear ||
+        existingTimetable.academicYear ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.academicYear
+      )
+        .trim()
+        .slice(0, 24);
+
+      resolvedSemester = (
+        params.academicMeta?.semester ||
+        student.currentSemester ||
+        existingTimetable.semester ||
+        DEFAULT_TIMETABLE_ACADEMIC_META.semester
+      )
+        .trim()
+        .slice(0, 24);
+
+      finalVersion = existingTimetable.version + 1;
+      const aggregates = extractTimetableAggregates(cleanClasses);
+
+      const existingAvailability = availSnap.exists()
+        ? (availSnap.data() as StudentAvailabilityDoc)
+        : null;
+
+      const derivedAvailability = calculateDerivedAvailability({
+        uid,
+        classes: cleanClasses,
+        timetableVersion: finalVersion,
+        isOptedIn: existingAvailability?.isOptedIn ?? false,
+      });
+
+      const canKeepOptIn =
+        Boolean(existingAvailability?.isOptedIn) && derivedAvailability.totalFreePeriods > 0;
+
+      const publicMetadata = sanitizeAvailabilityPublicMetadata({
+        fullName: student.fullName || currentUser.displayName || 'IDEA Lab Student',
+        department: resolvedDepartment,
+        degree: student.degree,
+        academicYear: resolvedAcademicYear,
+        photoURL: student.photoURL ?? currentUser.photoURL ?? undefined,
+        avatarPresetId: student.avatarPresetId,
+        skills: student.skills,
+        phoneNumber: student.phoneNumber ?? '',
+        whatsappNumber: student.whatsappNumber ?? '',
+        profileComplete: true,
+      });
+
+      tx.update(timetableRef, {
+        semester: resolvedSemester,
+        academicYear: resolvedAcademicYear,
+        department: resolvedDepartment,
+        classes: cleanClasses,
+        ...aggregates,
+        totalSubjects: summary.totalSubjects,
+        classDays: summary.classDays,
+        totalClasses: summary.totalClasses,
+        submissionStatus: 'finalized',
+        isLocked: true,
+        version: finalVersion,
+        submittedAt: serverTimestamp(),
+        finalizedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastEditedByUid: uid,
+        lastEditedByRole: 'student',
+      });
+
+      tx.set(availabilityRef, {
+        ...derivedAvailability,
+        isOptedIn: canKeepOptIn,
+        ...publicMetadata,
+        updatedAt: serverTimestamp(),
+      });
+
+      tx.update(studentRef, {
+        department: resolvedDepartment,
+        academicYear: resolvedAcademicYear,
+        currentAcademicYear: resolvedAcademicYear,
+        currentSemester: resolvedSemester,
+        timetableWorkflowState: 'finalized',
+        timetableAttemptsUsed: 1,
+        timetableLocked: true,
+        timetableFinalizedAt: serverTimestamp(),
+        timetableLastModifiedBy: uid,
+        timetableCompleted: true,
+        timetableStatus: 'submitted',
+        timetableUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      tx.set(auditRef, {
+        studentUid: uid,
+        studentEmail: student.email,
+        studentName: student.fullName,
+        ...(student.registrationNumber ? { registrationNumber: student.registrationNumber } : {}),
+        action: 'timetable_finalized',
+        actorUid: uid,
+        ...(currentUser.email ? { actorEmail: currentUser.email } : {}),
+        actorRole: 'student',
+        previousClasses: existingTimetable.classes,
+        newClasses: cleanClasses,
+        previousVersion: existingTimetable.version,
+        newVersion: finalVersion,
+        timestamp: serverTimestamp(),
+      });
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('locked') ||
+        error.message.includes('Review') ||
+        error.message.includes('profile') ||
+        error.message.includes('notice'))
+    ) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.WRITE, docPath);
+  }
+
+  clearTimetableDraft(uid);
+
+  return {
+    submissionId: `TT-FINAL-V${finalVersion}-${uid.slice(0, 6).toUpperCase()}`,
+    mode: 'firestore',
+    version: finalVersion,
+    submittedAt: new Date().toISOString(),
+    studentUid: uid,
+    semester: resolvedSemester,
+    academicYear: resolvedAcademicYear,
+    department: resolvedDepartment,
     classes: cleanClasses,
     summary,
   };

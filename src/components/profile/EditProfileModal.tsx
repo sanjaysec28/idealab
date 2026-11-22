@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Check, Loader2, Lock, Pencil, ShieldCheck, X } from 'lucide-react';
 import { updateStudentProfileDetails } from '../../firebase/studentService';
+import {
+  ACADEMIC_YEARS,
+  DEGREES,
+  DEPARTMENTS,
+  SEMESTERS,
+} from '../../utils/academicConstants';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -10,6 +16,7 @@ interface EditProfileModalProps {
     email: string;
     registrationNumber: string;
     department: string;
+    degree: string;
     academicYear: string;
     currentSemester: string;
     location: string;
@@ -22,32 +29,6 @@ interface EditProfileModalProps {
   onSaved: () => Promise<void> | void;
 }
 
-const DEPARTMENT_SUGGESTIONS = [
-  'AI & Data Science',
-  'Computer Science & Engineering',
-  'Information Technology',
-  'Electronics & Communication Engineering',
-  'Electrical & Electronics Engineering',
-  'Mechanical Engineering',
-  'Robotics & Automation',
-  'Biomedical Engineering',
-  'Cyber Security',
-  'AI & Machine Learning',
-];
-
-const ACADEMIC_YEARS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
-
-const SEMESTERS = [
-  'Semester 1',
-  'Semester 2',
-  'Semester 3',
-  'Semester 4',
-  'Semester 5',
-  'Semester 6',
-  'Semester 7',
-  'Semester 8',
-];
-
 export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   isOpen,
   uid,
@@ -57,6 +38,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 }) => {
   const [fullName, setFullName] = useState(initialValues.fullName);
   const [department, setDepartment] = useState(initialValues.department);
+  const [degree, setDegree] = useState(initialValues.degree || DEGREES[0]);
   const [academicYear, setAcademicYear] = useState(initialValues.academicYear);
   const [currentSemester, setCurrentSemester] = useState(initialValues.currentSemester);
   const [location, setLocation] = useState(initialValues.location);
@@ -71,6 +53,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     if (!isOpen) return;
     setFullName(initialValues.fullName);
     setDepartment(initialValues.department);
+    setDegree(initialValues.degree || DEGREES[0]);
     setAcademicYear(initialValues.academicYear);
     setCurrentSemester(initialValues.currentSemester);
     setLocation(initialValues.location);
@@ -93,11 +76,12 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       await updateStudentProfileDetails(uid, {
         fullName,
         department,
+        degree,
         academicYear,
         currentSemester,
         location,
         phoneNumber,
-        whatsappNumber,
+        whatsappNumber: whatsappNumber.trim() || phoneNumber,
         bio,
       });
       await onSaved();
@@ -214,7 +198,28 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 />
               </div>
 
-              <div className="sm:col-span-2">
+              <div>
+                <label className="block text-xs font-bold text-[#202020] mb-1.5">
+                  Degree <span className="text-[#E63946]">*</span>
+                </label>
+                <select
+                  required
+                  value={degree}
+                  onChange={(e) => setDegree(e.target.value)}
+                  className="w-full rounded-xl bg-[#FAF8F5] focus:bg-white border border-[#EAE6E1] focus:border-[#E63946] px-4 py-2.5 text-sm text-[#202020] outline-none transition-colors"
+                >
+                  {!DEGREES.includes(degree as (typeof DEGREES)[number]) && degree && (
+                    <option value={degree}>{degree}</option>
+                  )}
+                  {DEGREES.map((deg) => (
+                    <option key={deg} value={deg}>
+                      {deg}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-xs font-bold text-[#202020] mb-1.5">
                   Department <span className="text-[#E63946]">*</span>
                 </label>
@@ -230,7 +235,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   className="w-full rounded-xl bg-[#FAF8F5] focus:bg-white border border-[#EAE6E1] focus:border-[#E63946] px-4 py-2.5 text-sm text-[#202020] outline-none transition-colors"
                 />
                 <datalist id="sec-departments-list">
-                  {DEPARTMENT_SUGGESTIONS.map((dept) => (
+                  {DEPARTMENTS.map((dept) => (
                     <option key={dept} value={dept} />
                   ))}
                 </datalist>
@@ -238,13 +243,14 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-[#202020] mb-1.5">
-                  Academic Year <span className="text-[#E63946]">*</span>
+                  Academic Year
                 </label>
                 <select
                   value={academicYear}
                   onChange={(e) => setAcademicYear(e.target.value)}
                   className="w-full rounded-xl bg-[#FAF8F5] focus:bg-white border border-[#EAE6E1] focus:border-[#E63946] px-4 py-2.5 text-sm text-[#202020] outline-none transition-colors"
                 >
+                  <option value="">Not specified</option>
                   {ACADEMIC_YEARS.map((yr) => (
                     <option key={yr} value={yr}>
                       {yr}
@@ -255,13 +261,14 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-[#202020] mb-1.5">
-                  Semester <span className="text-[#E63946]">*</span>
+                  Semester
                 </label>
                 <select
                   value={currentSemester}
                   onChange={(e) => setCurrentSemester(e.target.value)}
                   className="w-full rounded-xl bg-[#FAF8F5] focus:bg-white border border-[#EAE6E1] focus:border-[#E63946] px-4 py-2.5 text-sm text-[#202020] outline-none transition-colors"
                 >
+                  <option value="">Not specified</option>
                   {SEMESTERS.map((sem) => (
                     <option key={sem} value={sem}>
                       {sem}
@@ -270,7 +277,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 </select>
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-[#202020] mb-1.5">
                   Location
                 </label>
@@ -286,10 +293,11 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-[#202020] mb-1.5">
-                  Phone Number
+                  Phone Number <span className="text-[#E63946]">*</span>
                 </label>
                 <input
                   type="tel"
+                  required
                   maxLength={24}
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
@@ -298,17 +306,17 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 />
               </div>
 
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block text-xs font-bold text-[#202020] mb-1.5">
-                  WhatsApp Number{' '}
-                  <span className="font-normal text-[#777777]">(Optional, if different from phone)</span>
+                  WhatsApp Number <span className="text-[#E63946]">*</span>
                 </label>
                 <input
                   type="tel"
+                  required
                   maxLength={24}
                   value={whatsappNumber}
                   onChange={(e) => setWhatsappNumber(e.target.value)}
-                  placeholder="Optional, defaults to your phone number"
+                  placeholder="e.g., +91 98765 43210"
                   className="w-full rounded-xl bg-[#FAF8F5] focus:bg-white border border-[#EAE6E1] focus:border-[#E63946] px-4 py-2.5 text-sm text-[#202020] outline-none transition-colors"
                 />
               </div>

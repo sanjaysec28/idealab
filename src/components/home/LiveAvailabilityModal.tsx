@@ -426,7 +426,7 @@ export const LiveAvailabilityModal: React.FC<LiveAvailabilityModalProps> = ({
             <div className="space-y-2.5">
               {displayedStudents.map(({ student, todaySlots, isFreeRightNow }) => {
                 const name = student.fullName || 'IDEA Lab Member';
-                const academicMeta = [student.department, student.academicYear]
+                const academicMeta = [student.degree, student.department, student.academicYear]
                   .filter(Boolean)
                   .join(' · ');
                 const telHref = sanitizePhoneForTel(student.phoneNumber);
@@ -562,7 +562,7 @@ export const LiveAvailabilityModal: React.FC<LiveAvailabilityModalProps> = ({
             onClick={onClose}
             className="text-xs font-bold text-[#E63946] hover:underline whitespace-nowrap"
           >
-            Update Timetable →
+            View My Timetable →
           </Link>
         </div>
       </div>

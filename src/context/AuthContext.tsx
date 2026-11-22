@@ -4,18 +4,17 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '../firebase/config';
+import { auth, authPersistenceReady } from '../firebase/config';
 import {
-  getSignupDraft,
-  registerStudentAccount,
+  checkIsAdminUser,
   reloadStudentUser,
-  resendStudentVerificationEmail,
-  sendStudentPasswordReset,
-  signInStudentAccount,
+  signInWithGoogle as firebaseSignInWithGoogle,
   signOutStudentAccount,
+  verifyActiveStudentSession,
 } from '../firebase/authService';
 import {
   getStudentProfile,
@@ -27,19 +26,27 @@ import {
   subscribeToStudentAvailability,
   subscribeToStudentTimetable,
 } from '../services/timetableService';
-import { AuthStateStatus, SignInInput, SignupInput, StudentProfileDoc } from '../types/auth';
+import { AuthStateStatus, StudentProfileDoc } from '../types/auth';
 import { StudentAvailabilityDoc, StudentTimetableDoc } from '../types/timetable';
 import {
   deriveAuthState,
-  hasSubmittedStudentTimetable,
+  hasFinalizedStudentTimetable,
+  isStudentProfileComplete,
   resolveDestinationForState,
 } from '../utils/authRouting';
+
+const SESSION_SYNC_CHANNEL = 'idealab_auth_sync';
+
+type SessionSyncMessage =
+  | { type: 'SIGNED_OUT' }
+  | { type: 'SIGNED_IN'; uid: string };
 
 export interface DerivedStudentData {
   name: string;
   email: string;
   rollNumber: string;
   department: string;
+  degree: string;
   year: string;
   semester: string;
   submittedDate?: string;
@@ -50,17 +57,17 @@ interface AuthContextType {
   studentProfile: StudentProfileDoc | null;
   studentTimetable: StudentTimetableDoc | null;
   studentAvailability: StudentAvailabilityDoc | null;
+  isAdmin: boolean;
+  isAdminChecked: boolean;
+  hasCompletedProfile: boolean;
   hasCompletedTimetable: boolean;
+  isTimetableLocked: boolean;
   authState: AuthStateStatus;
   isAuthReady: boolean;
   isBusy: boolean;
   authError: string | null;
   clearAuthError: () => void;
-  signup: (input: SignupInput) => Promise<User>;
-  signIn: (input: SignInInput) => Promise<AuthStateStatus>;
-  resendVerificationEmail: () => Promise<void>;
-  refreshVerificationStatus: () => Promise<boolean>;
-  sendPasswordReset: (email: string) => Promise<void>;
+  signInWithGoogle: () => Promise<AuthStateStatus>;
   refreshStudentData: () => Promise<void>;
   signOut: () => Promise<void>;
   resolveDestinationPath: (intendedPath?: string, overrideState?: AuthStateStatus) => string;
@@ -71,19 +78,85 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [emailVerified, setEmailVerified] = useState<boolean>(false);
   const [studentProfile, setStudentProfile] = useState<StudentProfileDoc | null>(null);
   const [studentTimetable, setStudentTimetable] = useState<StudentTimetableDoc | null>(null);
   const [studentAvailability, setStudentAvailability] = useState<StudentAvailabilityDoc | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isAdminChecked, setIsAdminChecked] = useState<boolean>(false);
   const [isAuthReady, setIsAuthReady] = useState<boolean>(false);
   const [isProfileLoaded, setIsProfileLoaded] = useState<boolean>(false);
   const [isTimetableLoaded, setIsTimetableLoaded] = useState<boolean>(false);
   const [isBusy, setIsBusy] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  const activeSessionUidRef = useRef<string | null>(null);
+  const sessionEpochRef = useRef<number>(0);
+  const inFlightLoadRef = useRef<{
+    uid: string;
+    promise: Promise<{
+      profileDoc: StudentProfileDoc | null;
+      timetableDoc: StudentTimetableDoc | null;
+      availabilityDoc: StudentAvailabilityDoc | null;
+    }>;
+  } | null>(null);
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
+
   const clearAuthError = useCallback(() => setAuthError(null), []);
 
+  const resetToSignedOutState = useCallback((errorMessage: string | null = null) => {
+    activeSessionUidRef.current = null;
+    inFlightLoadRef.current = null;
+    setUser(null);
+    setIsAdmin(false);
+    setIsAdminChecked(true);
+    setIsAuthReady(true);
+    setStudentProfile(null);
+    setStudentTimetable(null);
+    setStudentAvailability(null);
+    setIsProfileLoaded(true);
+    setIsTimetableLoaded(true);
+    setAuthError(errorMessage);
+  }, []);
+
+  const postSessionSync = useCallback((message: SessionSyncMessage) => {
+    try {
+      syncChannelRef.current?.postMessage(message);
+    } catch {
+      // Ignore BroadcastChannel errors
+    }
+  }, []);
+
+  // Multi-tab instant session synchronization via BroadcastChannel (no tokens stored)
   useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel(SESSION_SYNC_CHANNEL);
+    syncChannelRef.current = channel;
+
+    channel.onmessage = (event: MessageEvent<SessionSyncMessage>) => {
+      const payload = event.data;
+      if (!payload) return;
+
+      if (payload.type === 'SIGNED_OUT') {
+        if (activeSessionUidRef.current !== null || auth.currentUser) {
+          sessionEpochRef.current += 1;
+          void signOutStudentAccount().catch(() => undefined);
+          resetToSignedOutState(null);
+        }
+      } else if (payload.type === 'SIGNED_IN') {
+        if (auth.currentUser && activeSessionUidRef.current !== auth.currentUser.uid) {
+          void verifyActiveStudentSession(auth.currentUser);
+        }
+      }
+    };
+
+    return () => {
+      syncChannelRef.current = null;
+      channel.close();
+    };
+  }, [resetToSignedOutState]);
+
+  useEffect(() => {
+    let unsubscribeAuth: (() => void) | null = null;
     let unsubscribeProfile: (() => void) | null = null;
     let unsubscribeTimetable: (() => void) | null = null;
     let unsubscribeAvailability: (() => void) | null = null;
@@ -104,107 +177,147 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+    void authPersistenceReady.then(() => {
       if (!active) return;
 
-      cleanupListeners();
+      unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+        if (!active) return;
 
-      if (!firebaseUser) {
-        setUser(null);
-        setEmailVerified(false);
-        setIsAuthReady(true);
-        setStudentProfile(null);
-        setStudentTimetable(null);
-        setStudentAvailability(null);
-        setIsProfileLoaded(true);
-        setIsTimetableLoaded(true);
-        return;
-      }
-
-      setIsProfileLoaded(false);
-      setIsTimetableLoaded(false);
-
-      void (async () => {
-        let resolvedUser = firebaseUser;
-
-        if (!resolvedUser.emailVerified) {
-          try {
-            resolvedUser = await reloadStudentUser(resolvedUser);
-          } catch {
-            // Keep existing Firebase user object if reload fails transiently
-          }
-        }
-
-        if (!active || auth.currentUser?.uid !== resolvedUser.uid) return;
-
-        setUser(resolvedUser);
-        setEmailVerified(Boolean(resolvedUser.emailVerified));
-        setIsAuthReady(true);
-
-        if (!resolvedUser.emailVerified) {
-          setStudentProfile(null);
-          setStudentTimetable(null);
-          setStudentAvailability(null);
-          setIsProfileLoaded(true);
-          setIsTimetableLoaded(true);
+        if (!firebaseUser) {
+          cleanupListeners();
+          sessionEpochRef.current += 1;
+          resetToSignedOutState(null);
           return;
         }
 
-        try {
-          const tokenResult = await resolvedUser.getIdTokenResult();
-          if (!tokenResult.claims.email_verified) {
-            await resolvedUser.getIdToken(true);
-          }
-        } catch {
-          // Continue subscribing even if token refresh fails transiently
+        // Prevent duplicate listener setup and profile reads if the exact same session is already active
+        if (activeSessionUidRef.current === firebaseUser.uid) {
+          setUser(firebaseUser);
+          setIsAuthReady(true);
+          return;
         }
 
-        if (!active || auth.currentUser?.uid !== resolvedUser.uid) return;
+        cleanupListeners();
+        activeSessionUidRef.current = firebaseUser.uid;
+        const epoch = ++sessionEpochRef.current;
 
-        unsubscribeProfile = subscribeToStudentProfile(
-          resolvedUser.uid,
-          (profileDoc) => {
-            if (!active) return;
-            setStudentProfile(profileDoc);
-            setIsProfileLoaded(true);
-          },
-          (err) => {
-            if (!active) return;
-            setAuthError(err.message);
-            setIsProfileLoaded(true);
-          }
-        );
+        setIsProfileLoaded(false);
+        setIsTimetableLoaded(false);
+        setIsAdminChecked(false);
+        setAuthError(null);
 
-        unsubscribeTimetable = subscribeToStudentTimetable(
-          resolvedUser.uid,
-          (timetableDoc) => {
-            if (!active) return;
-            setStudentTimetable(timetableDoc);
-            setIsTimetableLoaded(true);
-          },
-          (err) => {
-            if (!active) return;
-            setAuthError(err.message);
-            setIsTimetableLoaded(true);
-          }
-        );
+        void (async () => {
+          const verification = await verifyActiveStudentSession(firebaseUser);
+          if (!active || sessionEpochRef.current !== epoch) return;
 
-        unsubscribeAvailability = subscribeToStudentAvailability(
-          resolvedUser.uid,
-          (availabilityDoc) => {
-            if (!active) return;
-            setStudentAvailability(availabilityDoc);
+          if (verification.valid === false) {
+            cleanupListeners();
+            await signOutStudentAccount().catch(() => undefined);
+            if (!active || sessionEpochRef.current !== epoch) return;
+            resetToSignedOutState(verification.reason);
+            return;
           }
-        );
-      })();
+
+          const resolvedUser = verification.user;
+          setUser(resolvedUser);
+          setIsAuthReady(true);
+
+          void checkIsAdminUser(resolvedUser).then((adminFlag) => {
+            if (active && sessionEpochRef.current === epoch) {
+              setIsAdmin(adminFlag);
+              setIsAdminChecked(true);
+            }
+          });
+
+          let profileReceived = false;
+          let timetableReceived = false;
+
+          unsubscribeProfile = subscribeToStudentProfile(
+            resolvedUser.uid,
+            (profileDoc) => {
+              if (!active || sessionEpochRef.current !== epoch) return;
+              profileReceived = true;
+              setStudentProfile(profileDoc);
+              setIsProfileLoaded(true);
+            },
+            (err) => {
+              if (!active || sessionEpochRef.current !== epoch) return;
+              if (!profileReceived) {
+                setAuthError(err.message);
+                setIsProfileLoaded(true);
+              }
+            }
+          );
+
+          unsubscribeTimetable = subscribeToStudentTimetable(
+            resolvedUser.uid,
+            (timetableDoc) => {
+              if (!active || sessionEpochRef.current !== epoch) return;
+              timetableReceived = true;
+              setStudentTimetable(timetableDoc);
+              setIsTimetableLoaded(true);
+            },
+            (err) => {
+              if (!active || sessionEpochRef.current !== epoch) return;
+              if (!timetableReceived) {
+                setAuthError(err.message);
+                setIsTimetableLoaded(true);
+              }
+            }
+          );
+
+          unsubscribeAvailability = subscribeToStudentAvailability(
+            resolvedUser.uid,
+            (availabilityDoc) => {
+              if (!active || sessionEpochRef.current !== epoch) return;
+              setStudentAvailability(availabilityDoc);
+            }
+          );
+        })();
+      });
     });
 
     return () => {
       active = false;
-      unsubscribeAuth();
+      if (unsubscribeAuth) {
+        unsubscribeAuth();
+      }
       cleanupListeners();
     };
-  }, []);
+  }, [resetToSignedOutState]);
+
+  // Re-validate session on tab focus / next-day return to catch revoked or disabled accounts safely
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState && document.visibilityState !== 'visible') return;
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const epochAtCheck = sessionEpochRef.current;
+      void verifyActiveStudentSession(currentUser).then(async (result) => {
+        if (sessionEpochRef.current !== epochAtCheck) return;
+        if (result.valid === false) {
+          sessionEpochRef.current += 1;
+          await signOutStudentAccount().catch(() => undefined);
+          resetToSignedOutState(result.reason);
+          postSessionSync({ type: 'SIGNED_OUT' });
+        } else {
+          const adminFlag = await checkIsAdminUser(result.user);
+          if (sessionEpochRef.current === epochAtCheck) {
+            setIsAdmin(adminFlag);
+            setIsAdminChecked(true);
+          }
+        }
+      });
+    };
+
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    return () => {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, [postSessionSync, resetToSignedOutState]);
 
   const isStudentDataLoaded = isProfileLoaded && isTimetableLoaded;
 
@@ -213,18 +326,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deriveAuthState({
         isAuthReady,
         hasUser: Boolean(user),
-        emailVerified,
         isStudentDataLoaded,
         profile: studentProfile,
         timetable: studentTimetable,
       }),
-    [isAuthReady, user, emailVerified, isStudentDataLoaded, studentProfile, studentTimetable]
+    [isAuthReady, user, isStudentDataLoaded, studentProfile, studentTimetable]
+  );
+
+  const hasCompletedProfile = useMemo(
+    () => isStudentProfileComplete(studentProfile),
+    [studentProfile]
   );
 
   const hasCompletedTimetable = useMemo(
-    () => hasSubmittedStudentTimetable(studentProfile, studentTimetable),
+    () => hasFinalizedStudentTimetable(studentProfile, studentTimetable),
     [studentProfile, studentTimetable]
   );
+
+  const isTimetableLocked = hasCompletedTimetable;
 
   const resolveDestinationPath = useCallback(
     (intendedPath?: string, overrideState?: AuthStateStatus): string => {
@@ -235,160 +354,104 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const loadStudentDocs = useCallback(async (uid: string) => {
-    const [profileDoc, timetableDoc, availabilityDoc] = await Promise.all([
-      getStudentProfile(uid),
-      getStudentTimetable(uid),
-      getStudentAvailability(uid),
-    ]);
-    setStudentProfile(profileDoc);
-    setStudentTimetable(timetableDoc);
-    setStudentAvailability(availabilityDoc);
-    setIsProfileLoaded(true);
-    setIsTimetableLoaded(true);
-    return { profileDoc, timetableDoc, availabilityDoc };
-  }, []);
+    if (inFlightLoadRef.current?.uid === uid) {
+      return inFlightLoadRef.current.promise;
+    }
 
-  const resolveStateForUser = useCallback(
-    async (firebaseUser: User): Promise<AuthStateStatus> => {
-      const freshUser = await reloadStudentUser(firebaseUser);
-      setUser(freshUser);
-      setEmailVerified(freshUser.emailVerified);
-      setIsAuthReady(true);
-
-      if (!freshUser.emailVerified) {
-        setStudentProfile(null);
-        setStudentTimetable(null);
-        setStudentAvailability(null);
+    const promise = (async () => {
+      const [profileDoc, timetableDoc, availabilityDoc] = await Promise.all([
+        getStudentProfile(uid),
+        getStudentTimetable(uid),
+        getStudentAvailability(uid),
+      ]);
+      if (auth.currentUser?.uid === uid) {
+        setStudentProfile(profileDoc);
+        setStudentTimetable(timetableDoc);
+        setStudentAvailability(availabilityDoc);
         setIsProfileLoaded(true);
         setIsTimetableLoaded(true);
-        return 'unverified_email';
       }
+      return { profileDoc, timetableDoc, availabilityDoc };
+    })().finally(() => {
+      if (inFlightLoadRef.current?.uid === uid) {
+        inFlightLoadRef.current = null;
+      }
+    });
 
-      const { profileDoc, timetableDoc } = await loadStudentDocs(freshUser.uid);
-      return hasSubmittedStudentTimetable(profileDoc, timetableDoc)
-        ? 'ready'
-        : 'needs_timetable';
-    },
-    [loadStudentDocs]
-  );
+    inFlightLoadRef.current = { uid, promise };
+    return promise;
+  }, []);
 
-  const signup = useCallback(async (input: SignupInput): Promise<User> => {
+  const signInWithGoogle = useCallback(async (): Promise<AuthStateStatus> => {
     setAuthError(null);
     setIsBusy(true);
     try {
-      const createdUser = await registerStudentAccount(input);
-      setUser(createdUser);
-      setEmailVerified(createdUser.emailVerified);
+      const signedInUser = await firebaseSignInWithGoogle();
+      const freshUser = await reloadStudentUser(signedInUser);
+      setUser(freshUser);
       setIsAuthReady(true);
-      setStudentProfile(null);
-      setStudentTimetable(null);
-      setStudentAvailability(null);
-      setIsProfileLoaded(true);
-      setIsTimetableLoaded(true);
-      return createdUser;
+
+      const [adminFlag, docs] = await Promise.all([
+        checkIsAdminUser(freshUser),
+        loadStudentDocs(freshUser.uid),
+      ]);
+      setIsAdmin(adminFlag);
+      setIsAdminChecked(true);
+      postSessionSync({ type: 'SIGNED_IN', uid: freshUser.uid });
+
+      return deriveAuthState({
+        isAuthReady: true,
+        hasUser: true,
+        isStudentDataLoaded: true,
+        profile: docs.profileDoc,
+        timetable: docs.timetableDoc,
+      });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Registration failed.';
+      const msg = err instanceof Error ? err.message : 'Google sign-in failed.';
       setAuthError(msg);
       throw err;
     } finally {
       setIsBusy(false);
     }
-  }, []);
-
-  const signIn = useCallback(
-    async (input: SignInInput): Promise<AuthStateStatus> => {
-      setAuthError(null);
-      setIsBusy(true);
-      try {
-        const loggedInUser = await signInStudentAccount(input);
-        return await resolveStateForUser(loggedInUser);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Sign in failed.';
-        setAuthError(msg);
-        throw err;
-      } finally {
-        setIsBusy(false);
-      }
-    },
-    [resolveStateForUser]
-  );
-
-  const resendVerificationEmail = useCallback(async (): Promise<void> => {
-    const targetUser = auth.currentUser || user;
-    if (!targetUser) {
-      throw new Error('No active user session found.');
-    }
-    setAuthError(null);
-    await resendStudentVerificationEmail(targetUser);
-  }, [user]);
-
-  const refreshVerificationStatus = useCallback(async (): Promise<boolean> => {
-    const targetUser = auth.currentUser || user;
-    if (!targetUser) return false;
-    setAuthError(null);
-    const reloaded = await reloadStudentUser(targetUser);
-    setUser(reloaded);
-    setEmailVerified(reloaded.emailVerified);
-    setIsAuthReady(true);
-    if (reloaded.emailVerified) {
-      try {
-        await loadStudentDocs(reloaded.uid);
-      } catch {
-        setIsProfileLoaded(true);
-        setIsTimetableLoaded(true);
-      }
-    }
-    return reloaded.emailVerified;
-  }, [user, loadStudentDocs]);
+  }, [loadStudentDocs, postSessionSync]);
 
   const refreshStudentData = useCallback(async (): Promise<void> => {
     const targetUser = auth.currentUser || user;
-    if (!targetUser || !targetUser.emailVerified) return;
+    if (!targetUser) return;
     await loadStudentDocs(targetUser.uid);
   }, [user, loadStudentDocs]);
 
-  const sendPasswordReset = useCallback(async (email: string): Promise<void> => {
-    setAuthError(null);
-    await sendStudentPasswordReset(email);
-  }, []);
-
   const signOut = useCallback(async (): Promise<void> => {
+    sessionEpochRef.current += 1;
     await signOutStudentAccount();
-    setUser(null);
-    setEmailVerified(false);
-    setStudentProfile(null);
-    setStudentTimetable(null);
-    setStudentAvailability(null);
-    setIsProfileLoaded(true);
-    setIsTimetableLoaded(true);
-    setAuthError(null);
-  }, []);
+    resetToSignedOutState(null);
+    postSessionSync({ type: 'SIGNED_OUT' });
+  }, [postSessionSync, resetToSignedOutState]);
 
   const studentData: DerivedStudentData = useMemo(() => {
-    const draft = user ? getSignupDraft(user.uid) : null;
     const emailPrefix = user?.email ? user.email.split('@')[0] : '';
     return {
       name:
         studentProfile?.fullName ||
         user?.displayName ||
-        draft?.fullName ||
         emailPrefix ||
         'IDEA Lab Student',
       email: studentProfile?.email || user?.email || '',
-      rollNumber: studentProfile?.registrationNumber || draft?.registrationNumber || '',
+      rollNumber: studentProfile?.registrationNumber || '',
       department:
         studentProfile?.department ||
         studentTimetable?.department ||
         'AI & Data Science',
+      degree: studentProfile?.degree || '',
       year:
         studentProfile?.currentAcademicYear ||
         studentProfile?.academicYear ||
         studentTimetable?.academicYear ||
-        '3rd Year',
+        '',
       semester:
         studentProfile?.currentSemester ||
         studentTimetable?.semester ||
-        'Semester 5',
+        '',
       submittedDate: studentProfile?.createdAt?.toDate
         ? studentProfile.createdAt.toDate().toLocaleDateString('en-US', {
             month: 'short',
@@ -406,17 +469,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         studentProfile,
         studentTimetable,
         studentAvailability,
+        isAdmin,
+        isAdminChecked,
+        hasCompletedProfile,
         hasCompletedTimetable,
+        isTimetableLocked,
         authState,
         isAuthReady,
         isBusy,
         authError,
         clearAuthError,
-        signup,
-        signIn,
-        resendVerificationEmail,
-        refreshVerificationStatus,
-        sendPasswordReset,
+        signInWithGoogle,
         refreshStudentData,
         signOut,
         resolveDestinationPath,

@@ -3,9 +3,13 @@ import { Timestamp } from 'firebase/firestore';
 export type AuthStateStatus =
   | 'loading'
   | 'unauthenticated'
-  | 'unverified_email'
+  | 'needs_profile'
+  | 'needs_timetable_warning'
   | 'needs_timetable'
+  | 'timetable_review'
   | 'ready';
+
+export type TimetableWorkflowState = 'not_started' | 'in_review' | 'finalized';
 
 export interface StudentSocialLinks {
   linkedin?: string;
@@ -17,8 +21,10 @@ export interface StudentProfileDoc {
   uid: string;
   fullName: string;
   email: string;
+  authProvider?: 'google' | 'password';
   registrationNumber?: string;
   department?: string;
+  degree?: string;
   academicYear?: string;
   currentAcademicYear?: string;
   currentSemester?: string;
@@ -33,10 +39,16 @@ export interface StudentProfileDoc {
   skills?: string[];
   interests?: string[];
   socialLinks?: StudentSocialLinks;
+  profileSetupCompleted?: boolean;
+  timetableWorkflowState?: TimetableWorkflowState;
+  timetableAttemptsUsed?: number;
+  timetableWarningAcceptedAt?: Timestamp;
+  timetableLocked?: boolean;
+  timetableFinalizedAt?: Timestamp;
+  timetableLastModifiedBy?: string;
   timetableCompleted?: boolean;
   timetableStatus?: 'not_submitted' | 'submitted';
   timetableUpdatedAt?: Timestamp;
-  profileSetupCompleted?: boolean;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
   // Legacy optional fields kept read-only so existing Firestore records load without breaking
@@ -46,20 +58,11 @@ export interface StudentProfileDoc {
   rejectionReason?: string;
 }
 
-export interface SignupInput {
+export interface CompleteProfileInput {
   fullName: string;
-  email: string;
-  registrationNumber?: string;
-  password: string;
-}
-
-export interface SignInInput {
-  email: string;
-  password: string;
-  rememberMe: boolean;
-}
-
-export interface SignupDraft {
-  fullName: string;
-  registrationNumber?: string;
+  registrationNumber: string;
+  department: string;
+  degree: string;
+  phoneNumber: string;
+  whatsappNumber: string;
 }

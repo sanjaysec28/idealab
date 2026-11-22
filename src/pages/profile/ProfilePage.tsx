@@ -9,6 +9,7 @@ import {
   GraduationCap,
   Hash,
   ImagePlus,
+  Lock,
   Mail,
   MapPin,
   Pencil,
@@ -44,6 +45,7 @@ export const ProfilePage: React.FC = () => {
     studentTimetable,
     studentAvailability,
     hasCompletedTimetable,
+    isTimetableLocked,
     studentData,
     refreshStudentData,
   } = useAuth();
@@ -65,17 +67,18 @@ export const ProfilePage: React.FC = () => {
     studentTimetable?.department ||
     studentData.department ||
     'AI & Data Science';
+  const degree = studentProfile?.degree || studentData.degree || 'B.E.';
   const academicYear =
     studentProfile?.currentAcademicYear ||
     studentProfile?.academicYear ||
     studentTimetable?.academicYear ||
     studentData.year ||
-    '3rd Year';
+    '';
   const currentSemester =
     studentProfile?.currentSemester ||
     studentTimetable?.semester ||
     studentData.semester ||
-    'Semester 5';
+    '';
   const location =
     studentProfile?.location?.trim() || 'Saveetha Engineering College, Chennai';
   const phoneNumber = studentProfile?.phoneNumber?.trim() || '';
@@ -207,11 +210,25 @@ export const ProfilePage: React.FC = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm font-medium text-[#777777]">
+                    {degree && (
+                      <>
+                        <span className="font-semibold text-[#202020]">{degree}</span>
+                        <span aria-hidden="true">·</span>
+                      </>
+                    )}
                     <span className="font-semibold text-[#202020]">{department}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{academicYear}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{currentSemester}</span>
+                    {academicYear && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>{academicYear}</span>
+                      </>
+                    )}
+                    {currentSemester && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>{currentSemester}</span>
+                      </>
+                    )}
                     {registrationNumber && (
                       <>
                         <span aria-hidden="true">·</span>
@@ -239,8 +256,12 @@ export const ProfilePage: React.FC = () => {
                   to="/timetable"
                   className="px-4 py-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#FFF0F1] border border-[#EAE6E1] text-xs font-bold text-[#202020] hover:text-[#E63946] inline-flex items-center gap-2 transition-colors whitespace-nowrap"
                 >
-                  <CalendarDays className="w-3.5 h-3.5 text-[#E63946]" />
-                  <span>Timetable Builder</span>
+                  {isTimetableLocked ? (
+                    <Lock className="w-3.5 h-3.5 text-[#177E48]" />
+                  ) : (
+                    <CalendarDays className="w-3.5 h-3.5 text-[#E63946]" />
+                  )}
+                  <span>{isTimetableLocked ? 'View Timetable' : 'Create Timetable'}</span>
                 </Link>
               </div>
             </div>
@@ -307,10 +328,11 @@ export const ProfilePage: React.FC = () => {
                 </div>
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold text-[#777777]">
-                    Academic Year & Semester
+                    Degree &amp; Academic Standing
                   </p>
                   <p className="text-xs font-bold text-[#202020] mt-0.5 truncate">
-                    {academicYear} · {currentSemester}
+                    {[degree, academicYear, currentSemester].filter(Boolean).join(' · ') ||
+                      'Student Program'}
                   </p>
                 </div>
               </div>
@@ -378,9 +400,11 @@ export const ProfilePage: React.FC = () => {
                     Timetable Status
                   </p>
                   <p className="text-xs font-bold text-[#202020] mt-0.5 truncate">
-                    {hasCompletedTimetable
-                      ? `Synced (v${studentTimetable?.version ?? 1})`
-                      : 'Not Submitted Yet'}
+                    {isTimetableLocked
+                      ? `Finalized & Locked (v${studentTimetable?.version ?? 1})`
+                      : hasCompletedTimetable
+                        ? `Synced (v${studentTimetable?.version ?? 1})`
+                        : 'Pending Final Confirmation'}
                   </p>
                 </div>
               </div>
@@ -448,6 +472,7 @@ export const ProfilePage: React.FC = () => {
           email,
           registrationNumber,
           department,
+          degree,
           academicYear,
           currentSemester,
           location,

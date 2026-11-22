@@ -1,46 +1,31 @@
 import {
   browserLocalPersistence,
-  browserSessionPersistence,
-  createUserWithEmailAndPassword,
-  sendEmailVerification,
-  sendPasswordResetEmail,
+  GoogleAuthProvider,
   setPersistence,
-  signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
-  updateProfile,
   User,
 } from 'firebase/auth';
-import { auth } from './config';
-import { SignupDraft, SignupInput, SignInInput } from '../types/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, authPersistenceReady, db } from './config';
 
-const SIGNUP_DRAFT_PREFIX = 'idealab_signup_draft_';
+const FATAL_SESSION_ERROR_CODES = new Set([
+  'auth/user-disabled',
+  'auth/user-not-found',
+  'auth/user-token-expired',
+  'auth/invalid-user-token',
+  'auth/token-revoked',
+  'auth/requires-recent-login',
+]);
 
-export function saveSignupDraft(uid: string, draft: SignupDraft): void {
-  if (typeof sessionStorage === 'undefined') return;
-  try {
-    sessionStorage.setItem(`${SIGNUP_DRAFT_PREFIX}${uid}`, JSON.stringify(draft));
-  } catch {
-    // Ignore storage errors
-  }
+export function getFirebaseErrorCode(err: unknown): string {
+  return typeof err === 'object' && err !== null && 'code' in err
+    ? String((err as { code: unknown }).code)
+    : '';
 }
 
-export function getSignupDraft(uid: string): SignupDraft | null {
-  if (typeof sessionStorage === 'undefined') return null;
-  try {
-    const raw = sessionStorage.getItem(`${SIGNUP_DRAFT_PREFIX}${uid}`);
-    return raw ? (JSON.parse(raw) as SignupDraft) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function clearSignupDraft(uid: string): void {
-  if (typeof sessionStorage === 'undefined') return;
-  try {
-    sessionStorage.removeItem(`${SIGNUP_DRAFT_PREFIX}${uid}`);
-  } catch {
-    // Ignore
-  }
+export function isSessionRevokedOrExpiredError(err: unknown): boolean {
+  return FATAL_SESSION_ERROR_CODES.has(getFirebaseErrorCode(err));
 }
 
 export function mapFirebaseAuthError(err: unknown): string {
@@ -50,26 +35,26 @@ export function mapFirebaseAuthError(err: unknown): string {
       : '';
 
   switch (code) {
-    case 'auth/email-already-in-use':
-      return 'An account with this email already exists. Please sign in instead.';
-    case 'auth/invalid-email':
-      return 'Please enter a valid email address.';
-    case 'auth/weak-password':
-      return 'Password is too weak. Use at least 8 characters with letters and numbers.';
-    case 'auth/user-not-found':
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-      return 'Invalid email or password. Please check your credentials and try again.';
-    case 'auth/too-many-requests':
-      return 'Too many attempts. Please wait a moment before trying again.';
-    case 'auth/user-disabled':
-      return 'This account has been disabled. Contact your IDEA LAB coordinator.';
+    case 'auth/popup-closed-by-user':
+      return 'Google sign-in popup was closed before completing. Please try again.';
+    case 'auth/cancelled-popup-request':
+      return 'Another sign-in popup is already open. Please complete or close it and try again.';
+    case 'auth/popup-blocked':
+      return 'Popup was blocked by your browser. Please allow popups for this site and try again.';
+    case 'auth/unauthorized-domain':
+      return 'This domain is not yet authorized in Firebase Authentication settings. Contact the IDEA LAB administrator.';
     case 'auth/operation-not-allowed':
-      return 'Email/Password sign-in is not yet enabled in Firebase Console Authentication settings.';
+      return 'Google Sign-In is not yet enabled in Firebase Console Authentication settings.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account with this email already exists using a different sign-in method.';
+    case 'auth/too-many-requests':
+      return 'Too many sign-in attempts. Please wait a moment and try again.';
+    case 'auth/user-disabled':
+      return 'This student account has been disabled. Contact your IDEA LAB coordinator.';
     case 'auth/network-request-failed':
-      return 'Network error. Please check your connection and try again.';
+      return 'Network error while connecting to Google. Check your internet connection and try again.';
     default:
-      return err instanceof Error ? err.message : 'Authentication failed. Please try again.';
+      return err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
   }
 }
 
@@ -99,49 +84,22 @@ export function isValidEmailAddress(email: string | null | undefined): boolean {
 export function assertValidEmailAddress(email: string | null | undefined): string {
   const normalized = normalizeEmail(email);
   if (!isValidEmailAddress(normalized)) {
-    throw new Error('Please enter a valid email address.');
+    throw new Error('A valid verified Google email address is required.');
   }
   return normalized;
 }
 
-export async function registerStudentAccount(input: SignupInput): Promise<User> {
-  const email = assertValidEmailAddress(input.email);
-  const fullName = input.fullName.trim();
-  const registrationNumber = (input.registrationNumber ?? '').trim().toUpperCase();
-
+export async function signInWithGoogle(): Promise<User> {
   try {
+    await authPersistenceReady;
     await setPersistence(auth, browserLocalPersistence);
-    const credential = await createUserWithEmailAndPassword(auth, email, input.password);
-    await updateProfile(credential.user, { displayName: fullName });
-    saveSignupDraft(credential.user.uid, {
-      fullName,
-      ...(registrationNumber ? { registrationNumber } : {}),
-    });
-    await sendEmailVerification(credential.user);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const credential = await signInWithPopup(auth, provider);
+    if (!credential.user.email) {
+      throw new Error('Google account did not return an email address.');
+    }
     return credential.user;
-  } catch (error) {
-    throw new Error(mapFirebaseAuthError(error));
-  }
-}
-
-export async function signInStudentAccount(input: SignInInput): Promise<User> {
-  const email = assertValidEmailAddress(input.email);
-  try {
-    await setPersistence(
-      auth,
-      input.rememberMe ? browserLocalPersistence : browserSessionPersistence
-    );
-    const credential = await signInWithEmailAndPassword(auth, email, input.password);
-    return credential.user;
-  } catch (error) {
-    throw new Error(mapFirebaseAuthError(error));
-  }
-}
-
-export async function resendStudentVerificationEmail(user: User): Promise<void> {
-  assertValidEmailAddress(user.email);
-  try {
-    await sendEmailVerification(user);
   } catch (error) {
     throw new Error(mapFirebaseAuthError(error));
   }
@@ -159,16 +117,60 @@ export async function reloadStudentUser(user: User): Promise<User> {
     }
     return freshUser;
   } catch (error) {
+    if (isSessionRevokedOrExpiredError(error)) {
+      throw error;
+    }
     throw new Error(mapFirebaseAuthError(error));
   }
 }
 
-export async function sendStudentPasswordReset(email: string): Promise<void> {
-  const normalized = assertValidEmailAddress(email);
+/**
+ * Validates a persisted Firebase Auth session cleanly.
+ * - Returns `{ valid: true, user }` if active or if only a transient/offline network error occurred.
+ * - Returns `{ valid: false, reason }` if Firebase reports the account/token was revoked, disabled, or deleted.
+ */
+export async function verifyActiveStudentSession(
+  user: User
+): Promise<{ valid: true; user: User } | { valid: false; reason: string }> {
   try {
-    await sendPasswordResetEmail(auth, normalized);
+    await user.reload();
+    const freshUser = auth.currentUser || user;
+    await freshUser.getIdTokenResult();
+    if (freshUser.emailVerified) {
+      const tokenResult = await freshUser.getIdTokenResult();
+      if (!tokenResult.claims.email_verified) {
+        await freshUser.getIdToken(true);
+      }
+    }
+    return { valid: true, user: freshUser };
   } catch (error) {
-    throw new Error(mapFirebaseAuthError(error));
+    if (isSessionRevokedOrExpiredError(error)) {
+      return {
+        valid: false,
+        reason: 'Your session expired or is no longer active. Please sign in again with Google.',
+      };
+    }
+    // Preserve persisted session across temporary offline / transient network errors
+    return { valid: true, user: auth.currentUser || user };
+  }
+}
+
+export async function checkIsAdminUser(user: User | null | undefined): Promise<boolean> {
+  if (!user || !user.uid) return false;
+  try {
+    const tokenResult = await user.getIdTokenResult();
+    if (tokenResult.claims.admin === true) {
+      return true;
+    }
+  } catch {
+    // Fallback to admins/{uid} check
+  }
+
+  try {
+    const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+    return adminSnap.exists();
+  } catch {
+    return false;
   }
 }
 

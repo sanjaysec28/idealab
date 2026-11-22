@@ -2,17 +2,28 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { auth, db } from './config';
-import { assertValidEmailAddress, getSignupDraft } from './authService';
+import { assertValidEmailAddress } from './authService';
 import { handleFirestoreError, OperationType } from './errorHandling';
-import { StudentProfileDoc, StudentSocialLinks } from '../types/auth';
+import {
+  CompleteProfileInput,
+  StudentProfileDoc,
+  StudentSocialLinks,
+} from '../types/auth';
+import {
+  isValidPhoneNumber,
+  isValidRegistrationNumber,
+  normalizeRegistrationNumber,
+} from '../utils/academicConstants';
 
 const STUDENTS_COLLECTION = 'students';
+const REG_NUMBERS_COLLECTION = 'registrationNumbers';
 
 export function normalizeUrlInput(raw: string | undefined): string {
   const trimmed = (raw ?? '').trim();
@@ -136,6 +147,194 @@ export function subscribeToStudentProfile(
   );
 }
 
+export async function checkRegistrationNumberAvailability(
+  rawRegNo: string,
+  currentUid?: string
+): Promise<{ validFormat: boolean; available: boolean; normalized: string }> {
+  const normalized = normalizeRegistrationNumber(rawRegNo);
+  if (!isValidRegistrationNumber(normalized)) {
+    return { validFormat: false, available: false, normalized };
+  }
+
+  const docPath = `${REG_NUMBERS_COLLECTION}/${normalized}`;
+  try {
+    const snap = await getDoc(doc(db, REG_NUMBERS_COLLECTION, normalized));
+    if (!snap.exists()) {
+      return { validFormat: true, available: true, normalized };
+    }
+    const ownerUid = (snap.data() as { uid?: string } | undefined)?.uid;
+    return {
+      validFormat: true,
+      available: Boolean(currentUid && ownerUid === currentUid),
+      normalized,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, docPath);
+  }
+}
+
+export async function completeStudentProfile(
+  uid: string,
+  input: CompleteProfileInput
+): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.uid !== uid) {
+    throw new Error('Your session expired. Please sign in again with Google.');
+  }
+
+  const verifiedEmail = assertValidEmailAddress(currentUser.email);
+  const fullName = input.fullName.trim().slice(0, 100);
+  const registrationNumber = normalizeRegistrationNumber(input.registrationNumber).slice(0, 32);
+  const department = input.department.trim().slice(0, 80);
+  const degree = input.degree.trim().slice(0, 40);
+  const phoneNumber = input.phoneNumber.trim().slice(0, 32);
+  const whatsappNumber = input.whatsappNumber.trim().slice(0, 32);
+
+  if (fullName.length < 2) {
+    throw new Error('Full Name must be at least 2 characters.');
+  }
+  if (!isValidRegistrationNumber(registrationNumber)) {
+    throw new Error(
+      'Registration Number must be 4–32 uppercase letters, numbers, or hyphens.'
+    );
+  }
+  if (department.length < 2) {
+    throw new Error('Please select your academic department.');
+  }
+  if (degree.length < 2) {
+    throw new Error('Please select your degree program.');
+  }
+  if (!isValidPhoneNumber(phoneNumber)) {
+    throw new Error('Please enter a valid phone number (7–24 characters).');
+  }
+  if (!isValidPhoneNumber(whatsappNumber)) {
+    throw new Error('Please enter a valid WhatsApp number (7–24 characters).');
+  }
+
+  const studentRef = doc(db, STUDENTS_COLLECTION, uid);
+  const regLockRef = doc(db, REG_NUMBERS_COLLECTION, registrationNumber);
+  const docPath = `${STUDENTS_COLLECTION}/${uid}`;
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const [studentSnap, regLockSnap] = await Promise.all([
+        tx.get(studentRef),
+        tx.get(regLockRef),
+      ]);
+
+      if (regLockSnap.exists()) {
+        const lockData = regLockSnap.data() as { uid?: string };
+        if (lockData.uid && lockData.uid !== uid) {
+          throw new Error(
+            'This Registration Number is already registered to another student.'
+          );
+        }
+      }
+
+      if (studentSnap.exists()) {
+        const existing = studentSnap.data() as StudentProfileDoc;
+        if (
+          existing.registrationNumber &&
+          normalizeRegistrationNumber(existing.registrationNumber) !== registrationNumber
+        ) {
+          throw new Error(
+            'Your Registration Number is already registered and cannot be changed.'
+          );
+        }
+
+        if (!regLockSnap.exists()) {
+          tx.set(regLockRef, {
+            uid,
+            createdAt: serverTimestamp(),
+          });
+        }
+
+        tx.update(studentRef, {
+          fullName,
+          authProvider: 'google',
+          ...(existing.registrationNumber ? {} : { registrationNumber }),
+          department,
+          degree,
+          phoneNumber,
+          whatsappNumber,
+          profileSetupCompleted: true,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        if (!regLockSnap.exists()) {
+          tx.set(regLockRef, {
+            uid,
+            createdAt: serverTimestamp(),
+          });
+        }
+
+        const cleanPhotoUrl =
+          currentUser.photoURL && currentUser.photoURL.trim().length > 0
+            ? currentUser.photoURL.trim().slice(0, 1000)
+            : undefined;
+
+        tx.set(studentRef, {
+          uid,
+          fullName,
+          email: verifiedEmail,
+          authProvider: 'google',
+          registrationNumber,
+          department,
+          degree,
+          phoneNumber,
+          whatsappNumber,
+          ...(cleanPhotoUrl ? { photoURL: cleanPhotoUrl } : {}),
+          profileSetupCompleted: true,
+          timetableWorkflowState: 'not_started',
+          timetableAttemptsUsed: 0,
+          timetableLocked: false,
+          timetableCompleted: false,
+          timetableStatus: 'not_submitted',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('Registration Number') ||
+        error.message.includes('already registered'))
+    ) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.WRITE, docPath);
+  }
+
+  // Non-fatal sync to Auth displayName & availability/current metadata if present
+  if (auth.currentUser && auth.currentUser.uid === uid && auth.currentUser.displayName !== fullName) {
+    try {
+      await updateProfile(auth.currentUser, { displayName: fullName });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  try {
+    const availabilityRef = doc(db, STUDENTS_COLLECTION, uid, 'availability', 'current');
+    const availSnap = await getDoc(availabilityRef);
+    if (availSnap.exists()) {
+      await updateDoc(availabilityRef, {
+        fullName,
+        department,
+        degree,
+        phoneNumber,
+        whatsappNumber,
+        profileComplete: true,
+        emailVerified: true,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch {
+    // Non-fatal sync
+  }
+}
+
 async function writeStudentProfilePatch(
   uid: string,
   patch: Record<string, unknown>
@@ -146,7 +345,7 @@ async function writeStudentProfilePatch(
   }
 
   if (!currentUser.emailVerified) {
-    throw new Error('Please verify your email address before updating your profile.');
+    throw new Error('A verified Google account is required to update your profile.');
   }
 
   const docPath = `${STUDENTS_COLLECTION}/${uid}`;
@@ -177,6 +376,7 @@ async function writeStudentProfilePatch(
         const publicKeys = [
           'fullName',
           'department',
+          'degree',
           'academicYear',
           'photoURL',
           'avatarPresetId',
@@ -211,11 +411,9 @@ async function writeStudentProfilePatch(
   }
 
   const verifiedEmail = assertValidEmailAddress(currentUser.email);
-  const draft = getSignupDraft(uid);
   const fallbackName = (
     (typeof patch.fullName === 'string' && patch.fullName.trim()) ||
     currentUser.displayName ||
-    draft?.fullName ||
     verifiedEmail.split('@')[0] ||
     'IDEA Lab Student'
   )
@@ -223,16 +421,13 @@ async function writeStudentProfilePatch(
     .slice(0, 100);
 
   const safeFullName = fallbackName.length >= 2 ? fallbackName : 'IDEA Lab Student';
-  const registrationNumber = draft?.registrationNumber?.trim().toUpperCase().slice(0, 32);
 
   try {
     await setDoc(studentRef, {
       uid,
       fullName: safeFullName,
       email: verifiedEmail,
-      ...(registrationNumber && registrationNumber.length >= 4
-        ? { registrationNumber }
-        : {}),
+      authProvider: 'google',
       ...patch,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -245,11 +440,12 @@ async function writeStudentProfilePatch(
 export interface EditableProfileDetailsInput {
   fullName: string;
   department: string;
-  academicYear: string;
-  currentSemester: string;
+  degree: string;
+  academicYear?: string;
+  currentSemester?: string;
   location: string;
   phoneNumber: string;
-  whatsappNumber?: string;
+  whatsappNumber: string;
   bio: string;
 }
 
@@ -259,11 +455,12 @@ export async function updateStudentProfileDetails(
 ): Promise<void> {
   const fullName = updates.fullName.trim().slice(0, 100);
   const department = updates.department.trim().slice(0, 80);
-  const academicYear = updates.academicYear.trim().slice(0, 24);
-  const currentSemester = updates.currentSemester.trim().slice(0, 24);
+  const degree = updates.degree.trim().slice(0, 40);
+  const academicYear = (updates.academicYear ?? '').trim().slice(0, 24);
+  const currentSemester = (updates.currentSemester ?? '').trim().slice(0, 24);
   const location = updates.location.trim().slice(0, 120);
   const phoneNumber = updates.phoneNumber.trim().slice(0, 32);
-  const whatsappNumber = (updates.whatsappNumber ?? '').trim().slice(0, 32);
+  const whatsappNumber = updates.whatsappNumber.trim().slice(0, 32);
   const bio = updates.bio.trim().slice(0, 600);
 
   if (fullName.length < 2) {
@@ -272,31 +469,36 @@ export async function updateStudentProfileDetails(
   if (department.length < 2) {
     throw new Error('Department must be at least 2 characters.');
   }
-  if (academicYear.length < 2) {
-    throw new Error('Academic year is required.');
+  if (degree.length < 2) {
+    throw new Error('Degree must be at least 2 characters.');
   }
-  if (currentSemester.length < 1) {
-    throw new Error('Semester is required.');
-  }
-  if (phoneNumber && !/^[0-9+\-\s()]{7,24}$/.test(phoneNumber)) {
+  if (!isValidPhoneNumber(phoneNumber)) {
     throw new Error('Please enter a valid phone number (7–24 digits).');
   }
-  if (whatsappNumber && !/^[0-9+\-\s()]{7,24}$/.test(whatsappNumber)) {
+  if (!isValidPhoneNumber(whatsappNumber)) {
     throw new Error('Please enter a valid WhatsApp number (7–24 digits).');
   }
 
-  await writeStudentProfilePatch(uid, {
+  const patch: Record<string, unknown> = {
     fullName,
     department,
-    academicYear,
-    currentAcademicYear: academicYear,
-    currentSemester,
+    degree,
     location,
     phoneNumber,
     whatsappNumber,
     bio,
     profileSetupCompleted: true,
-  });
+  };
+
+  if (academicYear.length >= 2) {
+    patch.academicYear = academicYear;
+    patch.currentAcademicYear = academicYear;
+  }
+  if (currentSemester.length >= 1) {
+    patch.currentSemester = currentSemester;
+  }
+
+  await writeStudentProfilePatch(uid, patch);
 
   if (auth.currentUser && auth.currentUser.uid === uid && auth.currentUser.displayName !== fullName) {
     try {
@@ -397,4 +599,3 @@ export async function updateStudentProfilePhoto(
     }
   }
 }
-
