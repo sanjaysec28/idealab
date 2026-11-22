@@ -144,10 +144,10 @@ service cloud.firestore {
         && isOptionalBool(data, 'timetableLocked')
         && (!('timetableStatus' in data) || data.timetableStatus in ['not_submitted', 'submitted'])
         && (!('timetableWorkflowState' in data) || data.timetableWorkflowState in ['not_started', 'in_review', 'finalized'])
-        && (!('timetableAttemptsUsed' in data) || (data.timetableAttemptsUsed is int && data.timetableAttemptsUsed >= 0 && data.timetableAttemptsUsed <= 1))
+        && (!('timetableAttemptsUsed' in data) || data.timetableAttemptsUsed == null || (data.timetableAttemptsUsed is int && data.timetableAttemptsUsed >= 0 && data.timetableAttemptsUsed <= 1))
         && (!('timetableWarningAcceptedAt' in data) || data.timetableWarningAcceptedAt == null || data.timetableWarningAcceptedAt is timestamp)
         && (!('timetableFinalizedAt' in data) || data.timetableFinalizedAt == null || data.timetableFinalizedAt is timestamp)
-        && isOptionalBoundedString(data, 'timetableLastModifiedBy', 1, 128)
+        && (!('timetableLastModifiedBy' in data) || data.timetableLastModifiedBy == null || (data.timetableLastModifiedBy is string && data.timetableLastModifiedBy.size() >= 1 && data.timetableLastModifiedBy.size() <= 128))
         && (!('timetableUpdatedAt' in data) || data.timetableUpdatedAt == null || data.timetableUpdatedAt is timestamp)
         && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
@@ -218,7 +218,7 @@ service cloud.firestore {
     function isValidStudentAttemptsTransition(data, prev) {
       return ('timetableAttemptsUsed' in prev && prev.timetableAttemptsUsed is int && prev.timetableAttemptsUsed >= 1)
         ? (data.timetableAttemptsUsed == prev.timetableAttemptsUsed)
-        : (!('timetableAttemptsUsed' in data) || data.timetableAttemptsUsed in [0, 1]);
+        : (!('timetableAttemptsUsed' in data) || data.timetableAttemptsUsed == null || data.timetableAttemptsUsed in [0, 1]);
     }
 
     function isValidStudentWorkflowTransition(data, prev) {
@@ -288,7 +288,7 @@ service cloud.firestore {
         && (!('timetableLocked' in prev && prev.timetableLocked == true) || data.timetableLocked == true)
         && (!('timetableWarningAcceptedAt' in prev) || prev.timetableWarningAcceptedAt == null || data.timetableWarningAcceptedAt == prev.timetableWarningAcceptedAt)
         && (!('timetableFinalizedAt' in prev) || prev.timetableFinalizedAt == null || data.timetableFinalizedAt == prev.timetableFinalizedAt)
-        && (!('timetableFinalizedAt' in data) || (('timetableFinalizedAt' in prev) && prev.timetableFinalizedAt != null) || (
+        && (!('timetableFinalizedAt' in data) || data.timetableFinalizedAt == null || (('timetableFinalizedAt' in prev) && prev.timetableFinalizedAt != null) || (
           data.timetableFinalizedAt == request.time &&
           data.timetableLocked == true &&
           data.timetableWorkflowState == 'finalized'
@@ -355,6 +355,73 @@ service cloud.firestore {
         && data.updatedAt is timestamp
         && data.updatedAt == request.time
         && existsAfter(/databases/$(database)/documents/timetableAuditLogs/$('warn_' + uid));
+    }
+
+    function isValidStudentTimetableStateUpdate(data, prev, uid) {
+      return isOwner(uid)
+        && isVerifiedStudent()
+        && (!('uid' in prev) || prev.uid == uid)
+        && ('profileSetupCompleted' in prev && prev.profileSetupCompleted == true)
+        && ('timetableWarningAcceptedAt' in prev && prev.timetableWarningAcceptedAt is timestamp)
+        && !isStudentTimetableCurrentlyLocked(prev)
+        && data.diff(prev).affectedKeys().hasOnly([
+          'department',
+          'academicYear',
+          'currentAcademicYear',
+          'currentSemester',
+          'timetableWorkflowState',
+          'timetableAttemptsUsed',
+          'timetableLocked',
+          'timetableFinalizedAt',
+          'timetableLastModifiedBy',
+          'timetableCompleted',
+          'timetableStatus',
+          'timetableUpdatedAt',
+          'updatedAt'
+        ])
+        && data.department is string && data.department.size() >= 2 && data.department.size() <= 80
+        && data.academicYear is string && data.academicYear.size() >= 2 && data.academicYear.size() <= 24
+        && data.currentAcademicYear is string && data.currentAcademicYear.size() >= 2 && data.currentAcademicYear.size() <= 24
+        && data.currentSemester is string && data.currentSemester.size() >= 1 && data.currentSemester.size() <= 24
+        && data.timetableLastModifiedBy == uid
+        && data.timetableUpdatedAt == request.time
+        && data.updatedAt == request.time
+        && (
+          (
+            (!('timetableAttemptsUsed' in prev) || prev.timetableAttemptsUsed == null || prev.timetableAttemptsUsed == 0)
+            && !data.diff(prev).affectedKeys().hasAny(['timetableFinalizedAt', 'timetableCompleted', 'timetableStatus'])
+            && data.timetableWorkflowState == 'in_review'
+            && data.timetableAttemptsUsed == 1
+            && data.timetableLocked == false
+            && getAfter(/databases/$(database)/documents/students/$(uid)/timetable/current).data.submissionStatus == 'in_review'
+            && getAfter(/databases/$(database)/documents/students/$(uid)/timetable/current).data.isLocked == false
+            && getAfter(/databases/$(database)/documents/students/$(uid)/timetable/current).data.attemptNumber == 1
+          ) || (
+            ('timetableAttemptsUsed' in prev && prev.timetableAttemptsUsed == 1)
+            && ('timetableWorkflowState' in prev && prev.timetableWorkflowState == 'in_review')
+            && !data.diff(prev).affectedKeys().hasAny([
+              'timetableAttemptsUsed',
+              'timetableLocked',
+              'timetableFinalizedAt',
+              'timetableCompleted',
+              'timetableStatus'
+            ])
+            && data.timetableWorkflowState == 'in_review'
+            && getAfter(/databases/$(database)/documents/students/$(uid)/timetable/current).data.submissionStatus == 'in_review'
+            && getAfter(/databases/$(database)/documents/students/$(uid)/timetable/current).data.isLocked == false
+          ) || (
+            !('timetableFinalizedAt' in prev && prev.timetableFinalizedAt != null)
+            && exists(/databases/$(database)/documents/students/$(uid)/timetable/current)
+            && data.timetableWorkflowState == 'finalized'
+            && data.timetableAttemptsUsed == 1
+            && data.timetableLocked == true
+            && data.timetableFinalizedAt == request.time
+            && data.timetableCompleted == true
+            && data.timetableStatus == 'submitted'
+            && getAfter(/databases/$(database)/documents/students/$(uid)/timetable/current).data.submissionStatus == 'finalized'
+            && getAfter(/databases/$(database)/documents/students/$(uid)/timetable/current).data.isLocked == true
+          )
+        );
     }
 
     function isValidAdminStudentUpdate(data, prev, uid) {
@@ -761,6 +828,7 @@ service cloud.firestore {
 
       allow update: if isValidId(uid) && resource != null && (
         isValidStudentWarningAckUpdate(incoming(), existing(), uid) ||
+        isValidStudentTimetableStateUpdate(incoming(), existing(), uid) ||
         (isAdmin() && isValidAdminStudentUpdate(incoming(), existing(), uid)) ||
         (isOwner(uid) && isVerifiedStudent() && isValidLiveStudentSelfUpdate(incoming(), existing(), uid))
       );
@@ -794,9 +862,11 @@ service cloud.firestore {
             && incoming().lastEditedByUid == request.auth.uid
             && incoming().lastEditedByRole == 'student'
             && get(/databases/$(database)/documents/students/$(uid)).data.profileSetupCompleted == true
+            && !isStudentTimetableCurrentlyLocked(get(/databases/$(database)/documents/students/$(uid)).data)
             && ('timetableWarningAcceptedAt' in get(/databases/$(database)/documents/students/$(uid)).data)
             && get(/databases/$(database)/documents/students/$(uid)).data.timetableWarningAcceptedAt is timestamp
             && (!('timetableAttemptsUsed' in get(/databases/$(database)/documents/students/$(uid)).data)
+              || get(/databases/$(database)/documents/students/$(uid)).data.timetableAttemptsUsed == null
               || get(/databases/$(database)/documents/students/$(uid)).data.timetableAttemptsUsed == 0)
             && getAfter(/databases/$(database)/documents/students/$(uid)).data.timetableAttemptsUsed == 1
             && getAfter(/databases/$(database)/documents/students/$(uid)).data.timetableWorkflowState == 'in_review'
@@ -815,13 +885,14 @@ service cloud.firestore {
           ) || (
             isOwner(uid)
             && isVerifiedStudent()
-            && existing().isLocked == false
+            && !isStudentTimetableCurrentlyLocked(get(/databases/$(database)/documents/students/$(uid)).data)
+            && (!('isLocked' in existing()) || existing().isLocked == false)
             && existing().submissionStatus == 'in_review'
             && isValidTimetableWrite(incoming(), uid)
             && incoming().uid == existing().uid
-            && incoming().attemptNumber == existing().attemptNumber
-            && incoming().createdAt == existing().createdAt
-            && incoming().version >= existing().version
+            && (!('attemptNumber' in existing()) ? incoming().attemptNumber == 1 : incoming().attemptNumber == existing().attemptNumber)
+            && (!('createdAt' in existing()) ? incoming().createdAt is timestamp : incoming().createdAt == existing().createdAt)
+            && (!('version' in existing()) ? incoming().version >= 1 : incoming().version >= existing().version)
             && incoming().lastEditedByUid == request.auth.uid
             && incoming().lastEditedByRole == 'student'
             && (
@@ -899,7 +970,7 @@ service cloud.firestore {
                 'updatedAt'
               ]) || (
                 get(/databases/$(database)/documents/students/$(uid)).data.timetableLocked != true
-                && incoming().timetableVersion >= existing().timetableVersion
+                && (!('timetableVersion' in existing()) || incoming().timetableVersion >= existing().timetableVersion)
               )
             )
           )

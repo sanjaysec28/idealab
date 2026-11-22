@@ -11,6 +11,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
+import { User } from 'firebase/auth';
 import { auth, db } from '../firebase/config';
 import { assertValidEmailAddress } from '../firebase/authService';
 import { handleFirestoreError, OperationType } from '../firebase/errorHandling';
@@ -26,6 +27,7 @@ import {
   WEEKDAYS,
   WeekdayId,
 } from '../types/timetable';
+import { PHONE_NUMBER_REGEX } from '../utils/academicConstants';
 import {
   calculateDerivedAvailability,
   calculateTimetableSummary,
@@ -210,15 +212,22 @@ export function sanitizeAvailabilityPublicMetadata(
   }
   if (Array.isArray(input.skills)) {
     result.skills = input.skills
+      .filter((s): s is string => typeof s === 'string')
       .map((s) => s.trim().slice(0, 60))
       .filter(Boolean)
       .slice(0, 25);
   }
   if (typeof input.phoneNumber === 'string') {
-    result.phoneNumber = input.phoneNumber.trim().slice(0, 32);
+    const cleanPhone = input.phoneNumber.trim().slice(0, 32);
+    if (cleanPhone.length === 0 || PHONE_NUMBER_REGEX.test(cleanPhone)) {
+      result.phoneNumber = cleanPhone;
+    }
   }
   if (typeof input.whatsappNumber === 'string') {
-    result.whatsappNumber = input.whatsappNumber.trim().slice(0, 32);
+    const cleanWhatsapp = input.whatsappNumber.trim().slice(0, 32);
+    if (cleanWhatsapp.length === 0 || PHONE_NUMBER_REGEX.test(cleanWhatsapp)) {
+      result.whatsappNumber = cleanWhatsapp;
+    }
   }
   if (typeof input.profileComplete === 'boolean') {
     result.profileComplete = input.profileComplete;
@@ -319,13 +328,13 @@ export function extractTimetableAggregates(cleanClasses: TimetableClassEntry[]) 
   };
 }
 
-/**
- * Stage A: Acknowledge one-time timetable creation warning without consuming the attempt.
- */
-export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
+async function requireVerifiedStudentUser(
+  expectedUid?: string,
+  expiredMessage = 'Your session expired. Please sign in again with Google.'
+): Promise<User> {
   const currentUser = auth.currentUser;
-  if (!currentUser || currentUser.uid !== uid) {
-    throw new Error('Your session expired. Please sign in again with Google.');
+  if (!currentUser || (expectedUid && currentUser.uid !== expectedUid)) {
+    throw new Error(expiredMessage);
   }
 
   if (!currentUser.emailVerified) {
@@ -335,6 +344,7 @@ export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
   if (!refreshedUser.emailVerified) {
     throw new Error('A verified Google account is required to continue.');
   }
+  assertValidEmailAddress(refreshedUser.email);
 
   try {
     const tokenResult = await refreshedUser.getIdTokenResult();
@@ -342,8 +352,50 @@ export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
       await refreshedUser.getIdToken(true);
     }
   } catch {
-    // Proceed cleanly; Firestore request will verify auth token state
+    // Proceed cleanly; Firestore request validates auth token state
   }
+
+  return refreshedUser;
+}
+
+function buildSanitizedAuditMetadata(
+  student: StudentProfileDoc,
+  actorUser: User
+): Record<string, string> {
+  const cleanStudentEmail = (student.email || actorUser.email || '').trim().slice(0, 160);
+  const cleanStudentName = (student.fullName || actorUser.displayName || '').trim().slice(0, 100);
+  const cleanRegNo = (student.registrationNumber || '').trim().slice(0, 32);
+  const cleanActorEmail = (actorUser.email || '').trim().slice(0, 160);
+
+  return {
+    ...(cleanStudentEmail.length >= 5 ? { studentEmail: cleanStudentEmail } : {}),
+    ...(cleanStudentName.length >= 1 ? { studentName: cleanStudentName } : {}),
+    ...(cleanRegNo.length >= 4 ? { registrationNumber: cleanRegNo } : {}),
+    ...(cleanActorEmail.length >= 5 ? { actorEmail: cleanActorEmail } : {}),
+  };
+}
+
+function resolveBoundedAcademicMetaValue(
+  candidates: Array<string | undefined | null>,
+  fallback: string,
+  minLen: number,
+  maxLen: number
+): string {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim().slice(0, maxLen);
+    if (trimmed.length >= minLen) {
+      return trimmed;
+    }
+  }
+  return fallback;
+}
+
+/**
+ * Stage A: Acknowledge one-time timetable creation warning without consuming the attempt.
+ */
+export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
+  const refreshedUser = await requireVerifiedStudentUser(uid);
 
   const studentRef = doc(db, 'students', uid);
   const auditRef = doc(db, 'timetableAuditLogs', `warn_${uid}`);
@@ -369,11 +421,7 @@ export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
       return; // Already acknowledged (idempotent)
     }
 
-    const cleanStudentEmail = data.email?.trim().slice(0, 160);
-    const cleanStudentName = data.fullName?.trim().slice(0, 100);
-    const cleanRegNo = data.registrationNumber?.trim().slice(0, 32);
-    const cleanActorEmail = refreshedUser.email?.trim().slice(0, 160);
-
+    const auditMeta = buildSanitizedAuditMetadata(data, refreshedUser);
     const batch = writeBatch(db);
 
     batch.update(studentRef, {
@@ -383,20 +431,9 @@ export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
 
     batch.set(auditRef, {
       studentUid: uid,
-      ...(cleanStudentEmail && cleanStudentEmail.length >= 5
-        ? { studentEmail: cleanStudentEmail }
-        : {}),
-      ...(cleanStudentName && cleanStudentName.length >= 1
-        ? { studentName: cleanStudentName }
-        : {}),
-      ...(cleanRegNo && cleanRegNo.length >= 4
-        ? { registrationNumber: cleanRegNo }
-        : {}),
+      ...auditMeta,
       action: 'warning_acknowledged',
       actorUid: uid,
-      ...(cleanActorEmail && cleanActorEmail.length >= 5
-        ? { actorEmail: cleanActorEmail }
-        : {}),
       actorRole: 'student',
       timestamp: serverTimestamp(),
     });
@@ -423,13 +460,11 @@ export async function createOrUpdateReviewTimetable(params: {
   classes: TimetableClassEntry[];
   academicMeta?: Partial<TimetableAcademicMeta>;
 }): Promise<TimetableSubmissionRecord> {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Your session expired. Please sign in again to save your timetable.');
-  }
-
+  const currentUser = await requireVerifiedStudentUser(
+    undefined,
+    'Your session expired. Please sign in again to save your timetable.'
+  );
   const uid = currentUser.uid;
-  assertValidEmailAddress(currentUser.email);
 
   if (!Array.isArray(params.classes) || params.classes.length === 0) {
     throw new Error('Add at least one class before saving your timetable draft.');
@@ -503,33 +538,38 @@ export async function createOrUpdateReviewTimetable(params: {
         );
       }
 
-      resolvedDepartment = (
-        params.academicMeta?.department ||
-        student.department ||
-        DEFAULT_TIMETABLE_ACADEMIC_META.department
-      )
-        .trim()
-        .slice(0, 80);
+      resolvedDepartment = resolveBoundedAcademicMetaValue(
+        [params.academicMeta?.department, student.department],
+        DEFAULT_TIMETABLE_ACADEMIC_META.department,
+        2,
+        80
+      );
 
-      resolvedAcademicYear = (
-        params.academicMeta?.academicYear ||
-        student.currentAcademicYear ||
-        student.academicYear ||
-        DEFAULT_TIMETABLE_ACADEMIC_META.academicYear
-      )
-        .trim()
-        .slice(0, 24);
+      resolvedAcademicYear = resolveBoundedAcademicMetaValue(
+        [
+          params.academicMeta?.academicYear,
+          student.currentAcademicYear,
+          student.academicYear,
+        ],
+        DEFAULT_TIMETABLE_ACADEMIC_META.academicYear,
+        2,
+        24
+      );
 
-      resolvedSemester = (
-        params.academicMeta?.semester ||
-        student.currentSemester ||
-        DEFAULT_TIMETABLE_ACADEMIC_META.semester
-      )
-        .trim()
-        .slice(0, 24);
+      resolvedSemester = resolveBoundedAcademicMetaValue(
+        [params.academicMeta?.semester, student.currentSemester],
+        DEFAULT_TIMETABLE_ACADEMIC_META.semester,
+        1,
+        24
+      );
 
       const aggregates = extractTimetableAggregates(cleanClasses);
-      savedVersion = existingTimetable ? existingTimetable.version + 1 : 1;
+      const prevVersion =
+        existingTimetable && Number.isInteger(existingTimetable.version) && existingTimetable.version >= 1
+          ? Math.min(999, existingTimetable.version)
+          : 1;
+      savedVersion = existingTimetable ? prevVersion + 1 : 1;
+      const auditMeta = buildSanitizedAuditMetadata(student, currentUser);
 
       if (isFirstCreation) {
         tx.set(timetableRef, {
@@ -567,12 +607,9 @@ export async function createOrUpdateReviewTimetable(params: {
 
         tx.set(auditRef, {
           studentUid: uid,
-          studentEmail: student.email,
-          studentName: student.fullName,
-          ...(student.registrationNumber ? { registrationNumber: student.registrationNumber } : {}),
+          ...auditMeta,
           action: 'timetable_created',
           actorUid: uid,
-          ...(currentUser.email ? { actorEmail: currentUser.email } : {}),
           actorRole: 'student',
           newClasses: cleanClasses,
           previousVersion: 0,
@@ -591,6 +628,8 @@ export async function createOrUpdateReviewTimetable(params: {
           totalClasses: summary.totalClasses,
           submissionStatus: 'in_review',
           isLocked: false,
+          ...(existingTimetable.attemptNumber ? {} : { attemptNumber: 1 }),
+          ...(existingTimetable.createdAt ? {} : { createdAt: serverTimestamp() }),
           version: savedVersion,
           updatedAt: serverTimestamp(),
           lastEditedByUid: uid,
@@ -607,6 +646,21 @@ export async function createOrUpdateReviewTimetable(params: {
           timetableUpdatedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+
+        tx.set(auditRef, {
+          studentUid: uid,
+          ...auditMeta,
+          action: 'timetable_updated_in_review',
+          actorUid: uid,
+          actorRole: 'student',
+          previousClasses: Array.isArray(existingTimetable.classes)
+            ? existingTimetable.classes.slice(0, 24)
+            : [],
+          newClasses: cleanClasses,
+          previousVersion: prevVersion,
+          newVersion: savedVersion,
+          timestamp: serverTimestamp(),
+        });
       }
     });
   } catch (error) {
@@ -615,7 +669,9 @@ export async function createOrUpdateReviewTimetable(params: {
       (error.message.includes('locked') ||
         error.message.includes('attempt') ||
         error.message.includes('profile') ||
-        error.message.includes('notice'))
+        error.message.includes('notice') ||
+        error.message.includes('session expired') ||
+        error.message.includes('verified Google account'))
     ) {
       throw error;
     }
@@ -646,13 +702,11 @@ export async function finalizeTimetable(params: {
   classes: TimetableClassEntry[];
   academicMeta?: Partial<TimetableAcademicMeta>;
 }): Promise<TimetableSubmissionRecord> {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Your session expired. Please sign in again to finalize your timetable.');
-  }
-
+  const currentUser = await requireVerifiedStudentUser(
+    undefined,
+    'Your session expired. Please sign in again to finalize your timetable.'
+  );
   const uid = currentUser.uid;
-  assertValidEmailAddress(currentUser.email);
 
   if (!Array.isArray(params.classes) || params.classes.length === 0) {
     throw new Error('Add at least one class before finalizing your timetable.');
@@ -723,35 +777,41 @@ export async function finalizeTimetable(params: {
         );
       }
 
-      resolvedDepartment = (
-        params.academicMeta?.department ||
-        student.department ||
-        existingTimetable.department ||
-        DEFAULT_TIMETABLE_ACADEMIC_META.department
-      )
-        .trim()
-        .slice(0, 80);
+      resolvedDepartment = resolveBoundedAcademicMetaValue(
+        [params.academicMeta?.department, student.department, existingTimetable.department],
+        DEFAULT_TIMETABLE_ACADEMIC_META.department,
+        2,
+        80
+      );
 
-      resolvedAcademicYear = (
-        params.academicMeta?.academicYear ||
-        student.currentAcademicYear ||
-        student.academicYear ||
-        existingTimetable.academicYear ||
-        DEFAULT_TIMETABLE_ACADEMIC_META.academicYear
-      )
-        .trim()
-        .slice(0, 24);
+      resolvedAcademicYear = resolveBoundedAcademicMetaValue(
+        [
+          params.academicMeta?.academicYear,
+          student.currentAcademicYear,
+          student.academicYear,
+          existingTimetable.academicYear,
+        ],
+        DEFAULT_TIMETABLE_ACADEMIC_META.academicYear,
+        2,
+        24
+      );
 
-      resolvedSemester = (
-        params.academicMeta?.semester ||
-        student.currentSemester ||
-        existingTimetable.semester ||
-        DEFAULT_TIMETABLE_ACADEMIC_META.semester
-      )
-        .trim()
-        .slice(0, 24);
+      resolvedSemester = resolveBoundedAcademicMetaValue(
+        [
+          params.academicMeta?.semester,
+          student.currentSemester,
+          existingTimetable.semester,
+        ],
+        DEFAULT_TIMETABLE_ACADEMIC_META.semester,
+        1,
+        24
+      );
 
-      finalVersion = existingTimetable.version + 1;
+      const prevVersion =
+        Number.isInteger(existingTimetable.version) && existingTimetable.version >= 1
+          ? Math.min(999, existingTimetable.version)
+          : 1;
+      finalVersion = prevVersion + 1;
       const aggregates = extractTimetableAggregates(cleanClasses);
 
       const existingAvailability = availSnap.exists()
@@ -792,6 +852,8 @@ export async function finalizeTimetable(params: {
         totalClasses: summary.totalClasses,
         submissionStatus: 'finalized',
         isLocked: true,
+        ...(existingTimetable.attemptNumber ? {} : { attemptNumber: 1 }),
+        ...(existingTimetable.createdAt ? {} : { createdAt: serverTimestamp() }),
         version: finalVersion,
         submittedAt: serverTimestamp(),
         finalizedAt: serverTimestamp(),
@@ -823,18 +885,18 @@ export async function finalizeTimetable(params: {
         updatedAt: serverTimestamp(),
       });
 
+      const auditMeta = buildSanitizedAuditMetadata(student, currentUser);
       tx.set(auditRef, {
         studentUid: uid,
-        studentEmail: student.email,
-        studentName: student.fullName,
-        ...(student.registrationNumber ? { registrationNumber: student.registrationNumber } : {}),
+        ...auditMeta,
         action: 'timetable_finalized',
         actorUid: uid,
-        ...(currentUser.email ? { actorEmail: currentUser.email } : {}),
         actorRole: 'student',
-        previousClasses: existingTimetable.classes,
+        previousClasses: Array.isArray(existingTimetable.classes)
+          ? existingTimetable.classes.slice(0, 24)
+          : [],
         newClasses: cleanClasses,
-        previousVersion: existingTimetable.version,
+        previousVersion: prevVersion,
         newVersion: finalVersion,
         timestamp: serverTimestamp(),
       });
@@ -845,7 +907,9 @@ export async function finalizeTimetable(params: {
       (error.message.includes('locked') ||
         error.message.includes('Review') ||
         error.message.includes('profile') ||
-        error.message.includes('notice'))
+        error.message.includes('notice') ||
+        error.message.includes('session expired') ||
+        error.message.includes('verified Google account'))
     ) {
       throw error;
     }
