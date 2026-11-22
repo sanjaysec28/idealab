@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ArrowRight, CheckCircle2, Home, Info, Lock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { getFriendlyFirebaseErrorMessage } from '../../firebase/errorHandling';
 import {
   acknowledgeTimetableWarning,
   clearTimetableDraft,
@@ -344,7 +345,7 @@ export const TimetablePage: React.FC = () => {
       await refreshStudentData();
     } catch (err) {
       setWarningError(
-        err instanceof Error ? err.message : 'Unable to save confirmation. Please retry.'
+        getFriendlyFirebaseErrorMessage(err, 'Unable to save confirmation. Please retry.')
       );
     } finally {
       setIsAcknowledgingWarning(false);
@@ -367,12 +368,12 @@ export const TimetablePage: React.FC = () => {
         'Draft saved to Review Mode. Verify all periods carefully, then click "Final Confirm & Lock" when ready.'
       );
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Failed to save your timetable draft. Please retry.';
+      const message = getFriendlyFirebaseErrorMessage(
+        err,
+        'Failed to save your timetable draft. Please retry.'
+      );
       setSubmitError(message);
-      throw err;
+      throw new Error(message);
     } finally {
       setIsSavingDraft(false);
     }
@@ -391,12 +392,12 @@ export const TimetablePage: React.FC = () => {
       await refreshStudentData();
       navigate('/home', { replace: true });
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Failed to finalize your timetable. Please retry.';
+      const message = getFriendlyFirebaseErrorMessage(
+        err,
+        'Failed to finalize your timetable. Please retry.'
+      );
       setSubmitError(message);
-      throw err;
+      throw new Error(message);
     } finally {
       setIsFinalizing(false);
     }

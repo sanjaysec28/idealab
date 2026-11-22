@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { getFriendlyFirebaseErrorMessage } from '../../firebase/errorHandling';
 import { AuthLoadingScreen } from '../../components/auth/AuthGuard';
 import { ASSETS } from '../../utils/assets';
 import { IdeaLabLogo } from '../../components/shared/IdeaLabLogo';
@@ -59,14 +60,21 @@ export const WelcomePage: React.FC = () => {
       navigate(resolveDestinationPath(intendedFrom, nextState), { replace: true });
     } catch (err) {
       setLocalError(
-        err instanceof Error ? err.message : 'Unable to sign in with Google. Please try again.'
+        getFriendlyFirebaseErrorMessage(
+          err,
+          'Unable to sign in with Google. Please try again.'
+        )
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const displayError = localError || authError;
+  const displayError =
+    localError ||
+    (authError
+      ? getFriendlyFirebaseErrorMessage(authError, 'Unable to verify your session. Please try again.')
+      : null);
 
   const renderGoogleButton = (heightClass: string) => (
     <button

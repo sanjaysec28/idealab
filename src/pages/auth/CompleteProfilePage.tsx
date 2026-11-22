@@ -13,6 +13,7 @@ import {
   User,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { getFriendlyFirebaseErrorMessage } from '../../firebase/errorHandling';
 import {
   checkRegistrationNumberAvailability,
   completeStudentProfile,
@@ -163,7 +164,7 @@ export const CompleteProfilePage: React.FC = () => {
       navigate(resolveDestinationPath('/timetable'), { replace: true });
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Unable to save your profile. Please retry.'
+        getFriendlyFirebaseErrorMessage(err, 'Unable to save your profile. Please retry.')
       );
     } finally {
       setIsSaving(false);

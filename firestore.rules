@@ -145,10 +145,10 @@ service cloud.firestore {
         && (!('timetableStatus' in data) || data.timetableStatus in ['not_submitted', 'submitted'])
         && (!('timetableWorkflowState' in data) || data.timetableWorkflowState in ['not_started', 'in_review', 'finalized'])
         && (!('timetableAttemptsUsed' in data) || (data.timetableAttemptsUsed is int && data.timetableAttemptsUsed >= 0 && data.timetableAttemptsUsed <= 1))
-        && (!('timetableWarningAcceptedAt' in data) || data.timetableWarningAcceptedAt is timestamp)
-        && (!('timetableFinalizedAt' in data) || data.timetableFinalizedAt is timestamp)
+        && (!('timetableWarningAcceptedAt' in data) || data.timetableWarningAcceptedAt == null || data.timetableWarningAcceptedAt is timestamp)
+        && (!('timetableFinalizedAt' in data) || data.timetableFinalizedAt == null || data.timetableFinalizedAt is timestamp)
         && isOptionalBoundedString(data, 'timetableLastModifiedBy', 1, 128)
-        && (!('timetableUpdatedAt' in data) || data.timetableUpdatedAt is timestamp)
+        && (!('timetableUpdatedAt' in data) || data.timetableUpdatedAt == null || data.timetableUpdatedAt is timestamp)
         && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
@@ -205,6 +205,7 @@ service cloud.firestore {
         && (!('timetableLocked' in data) || data.timetableLocked == false)
         && (!('timetableWorkflowState' in data) || data.timetableWorkflowState == 'not_started')
         && (!('timetableCompleted' in data) || data.timetableCompleted == false)
+        && !('timetableWarningAcceptedAt' in data)
         && !('timetableFinalizedAt' in data)
         && (!('registrationNumber' in data) || hasValidRegNoReservationAfter(data.registrationNumber, uid));
     }
@@ -215,7 +216,7 @@ service cloud.firestore {
     }
 
     function isValidStudentAttemptsTransition(data, prev) {
-      return ('timetableAttemptsUsed' in prev && prev.timetableAttemptsUsed >= 1)
+      return ('timetableAttemptsUsed' in prev && prev.timetableAttemptsUsed is int && prev.timetableAttemptsUsed >= 1)
         ? (data.timetableAttemptsUsed == prev.timetableAttemptsUsed)
         : (!('timetableAttemptsUsed' in data) || data.timetableAttemptsUsed in [0, 1]);
     }
@@ -285,10 +286,9 @@ service cloud.firestore {
         )
         && (!('profileSetupCompleted' in prev && prev.profileSetupCompleted == true) || data.profileSetupCompleted == true)
         && (!('timetableLocked' in prev && prev.timetableLocked == true) || data.timetableLocked == true)
-        && (!('timetableWarningAcceptedAt' in prev) || data.timetableWarningAcceptedAt == prev.timetableWarningAcceptedAt)
-        && (!('timetableWarningAcceptedAt' in data) || ('timetableWarningAcceptedAt' in prev) || data.timetableWarningAcceptedAt == request.time)
-        && (!('timetableFinalizedAt' in prev) || data.timetableFinalizedAt == prev.timetableFinalizedAt)
-        && (!('timetableFinalizedAt' in data) || ('timetableFinalizedAt' in prev) || (
+        && (!('timetableWarningAcceptedAt' in prev) || prev.timetableWarningAcceptedAt == null || data.timetableWarningAcceptedAt == prev.timetableWarningAcceptedAt)
+        && (!('timetableFinalizedAt' in prev) || prev.timetableFinalizedAt == null || data.timetableFinalizedAt == prev.timetableFinalizedAt)
+        && (!('timetableFinalizedAt' in data) || (('timetableFinalizedAt' in prev) && prev.timetableFinalizedAt != null) || (
           data.timetableFinalizedAt == request.time &&
           data.timetableLocked == true &&
           data.timetableWorkflowState == 'finalized'
@@ -307,7 +307,7 @@ service cloud.firestore {
           'timetableUpdatedAt'
         ]))
         && data.updatedAt == request.time
-        && (!('timetableUpdatedAt' in data) || data.timetableUpdatedAt == request.time || (('timetableUpdatedAt' in prev) && data.timetableUpdatedAt == prev.timetableUpdatedAt))
+        && (!('timetableUpdatedAt' in data) || data.timetableUpdatedAt == null || data.timetableUpdatedAt == request.time || (('timetableUpdatedAt' in prev) && data.timetableUpdatedAt == prev.timetableUpdatedAt))
         && data.diff(prev).affectedKeys().hasOnly([
           'fullName',
           'authProvider',
@@ -331,7 +331,6 @@ service cloud.firestore {
           'profileSetupCompleted',
           'timetableWorkflowState',
           'timetableAttemptsUsed',
-          'timetableWarningAcceptedAt',
           'timetableLocked',
           'timetableFinalizedAt',
           'timetableLastModifiedBy',
@@ -340,6 +339,22 @@ service cloud.firestore {
           'timetableUpdatedAt',
           'updatedAt'
         ]);
+    }
+
+    function isValidStudentWarningAckUpdate(data, prev, uid) {
+      return isOwner(uid)
+        && isVerifiedStudent()
+        && (!('uid' in prev) || prev.uid == uid)
+        && ('profileSetupCompleted' in prev && prev.profileSetupCompleted == true)
+        && !isStudentTimetableCurrentlyLocked(prev)
+        && (!('timetableWarningAcceptedAt' in prev) || prev.timetableWarningAcceptedAt == null)
+        && data.diff(prev).affectedKeys().hasOnly(['timetableWarningAcceptedAt', 'updatedAt'])
+        && data.diff(prev).affectedKeys().hasAll(['timetableWarningAcceptedAt', 'updatedAt'])
+        && data.timetableWarningAcceptedAt is timestamp
+        && data.timetableWarningAcceptedAt == request.time
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/timetableAuditLogs/$('warn_' + uid));
     }
 
     function isValidAdminStudentUpdate(data, prev, uid) {
@@ -744,7 +759,8 @@ service cloud.firestore {
         && isVerifiedStudent()
         && isValidLiveStudentCreate(incoming(), uid);
 
-      allow update: if isValidId(uid) && (
+      allow update: if isValidId(uid) && resource != null && (
+        isValidStudentWarningAckUpdate(incoming(), existing(), uid) ||
         (isAdmin() && isValidAdminStudentUpdate(incoming(), existing(), uid)) ||
         (isOwner(uid) && isVerifiedStudent() && isValidLiveStudentSelfUpdate(incoming(), existing(), uid))
       );
@@ -779,6 +795,7 @@ service cloud.firestore {
             && incoming().lastEditedByRole == 'student'
             && get(/databases/$(database)/documents/students/$(uid)).data.profileSetupCompleted == true
             && ('timetableWarningAcceptedAt' in get(/databases/$(database)/documents/students/$(uid)).data)
+            && get(/databases/$(database)/documents/students/$(uid)).data.timetableWarningAcceptedAt is timestamp
             && (!('timetableAttemptsUsed' in get(/databases/$(database)/documents/students/$(uid)).data)
               || get(/databases/$(database)/documents/students/$(uid)).data.timetableAttemptsUsed == 0)
             && getAfter(/databases/$(database)/documents/students/$(uid)).data.timetableAttemptsUsed == 1
@@ -918,12 +935,18 @@ service cloud.firestore {
           && incoming().actorUid == request.auth.uid
           && incoming().studentUid == request.auth.uid
           && incoming().actorRole == 'student'
-          && incoming().action in [
-            'warning_acknowledged',
-            'timetable_created',
-            'timetable_updated_in_review',
-            'timetable_finalized'
-          ]
+          && (
+            (
+              incoming().action == 'warning_acknowledged'
+              && logId == ('warn_' + request.auth.uid)
+              && getAfter(/databases/$(database)/documents/students/$(request.auth.uid)).data.timetableWarningAcceptedAt == request.time
+            ) ||
+            incoming().action in [
+              'timetable_created',
+              'timetable_updated_in_review',
+              'timetable_finalized'
+            ]
+          )
         ) || (
           isAdmin()
           && incoming().actorUid == request.auth.uid

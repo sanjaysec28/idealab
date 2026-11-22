@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
+import { getFriendlyFirebaseErrorMessage } from '../../firebase/errorHandling';
 import {
   StudentTimetableDoc,
   TimetableAcademicMeta,
@@ -77,7 +78,7 @@ export const SubmitTimetableCard: React.FC<SubmitTimetableCardProps> = ({
       await onSaveDraft(meta);
     } catch (err) {
       setLocalError(
-        err instanceof Error ? err.message : 'Unable to save timetable draft. Please retry.'
+        getFriendlyFirebaseErrorMessage(err, 'Unable to save timetable draft. Please retry.')
       );
     }
   };
@@ -95,7 +96,7 @@ export const SubmitTimetableCard: React.FC<SubmitTimetableCardProps> = ({
       setShowConfirmModal(false);
     } catch (err) {
       setLocalError(
-        err instanceof Error ? err.message : 'Unable to finalize timetable. Please retry.'
+        getFriendlyFirebaseErrorMessage(err, 'Unable to finalize timetable. Please retry.')
       );
     }
   };

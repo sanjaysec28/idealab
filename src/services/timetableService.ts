@@ -324,16 +324,37 @@ export function extractTimetableAggregates(cleanClasses: TimetableClassEntry[]) 
 export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
   const currentUser = auth.currentUser;
   if (!currentUser || currentUser.uid !== uid) {
-    throw new Error('Your session expired. Please sign in again.');
+    throw new Error('Your session expired. Please sign in again with Google.');
+  }
+
+  if (!currentUser.emailVerified) {
+    await currentUser.reload();
+  }
+  const refreshedUser = auth.currentUser || currentUser;
+  if (!refreshedUser.emailVerified) {
+    throw new Error('A verified Google account is required to continue.');
+  }
+
+  try {
+    const tokenResult = await refreshedUser.getIdTokenResult();
+    if (!tokenResult.claims.email_verified) {
+      await refreshedUser.getIdToken(true);
+    }
+  } catch {
+    // Proceed cleanly; Firestore request will verify auth token state
   }
 
   const studentRef = doc(db, 'students', uid);
-  const auditRef = doc(collection(db, 'timetableAuditLogs'));
+  const auditRef = doc(db, 'timetableAuditLogs', `warn_${uid}`);
   const docPath = `students/${uid}`;
 
   try {
     await runTransaction(db, async (tx) => {
-      const snap = await tx.get(studentRef);
+      const [snap, auditSnap] = await Promise.all([
+        tx.get(studentRef),
+        tx.get(auditRef),
+      ]);
+
       if (!snap.exists()) {
         throw new Error('Please complete your student profile before continuing.');
       }
@@ -341,6 +362,10 @@ export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
       const data = snap.data() as StudentProfileDoc;
       if (data.profileSetupCompleted !== true) {
         throw new Error('Please complete your student profile before continuing.');
+      }
+
+      if (data.timetableLocked === true || data.timetableWorkflowState === 'finalized') {
+        return; // Timetable already finalized and locked
       }
 
       if (data.timetableWarningAcceptedAt) {
@@ -352,19 +377,42 @@ export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
         updatedAt: serverTimestamp(),
       });
 
-      tx.set(auditRef, {
-        studentUid: uid,
-        ...(data.email ? { studentEmail: data.email } : {}),
-        ...(data.fullName ? { studentName: data.fullName } : {}),
-        ...(data.registrationNumber ? { registrationNumber: data.registrationNumber } : {}),
-        action: 'warning_acknowledged',
-        actorUid: uid,
-        ...(currentUser.email ? { actorEmail: currentUser.email } : {}),
-        actorRole: 'student',
-        timestamp: serverTimestamp(),
-      });
+      if (!auditSnap.exists()) {
+        const cleanStudentEmail = data.email?.trim().slice(0, 160);
+        const cleanStudentName = data.fullName?.trim().slice(0, 100);
+        const cleanRegNo = data.registrationNumber?.trim().slice(0, 32);
+        const cleanActorEmail = refreshedUser.email?.trim().slice(0, 160);
+
+        tx.set(auditRef, {
+          studentUid: uid,
+          ...(cleanStudentEmail && cleanStudentEmail.length >= 5
+            ? { studentEmail: cleanStudentEmail }
+            : {}),
+          ...(cleanStudentName && cleanStudentName.length >= 1
+            ? { studentName: cleanStudentName }
+            : {}),
+          ...(cleanRegNo && cleanRegNo.length >= 4
+            ? { registrationNumber: cleanRegNo }
+            : {}),
+          action: 'warning_acknowledged',
+          actorUid: uid,
+          ...(cleanActorEmail && cleanActorEmail.length >= 5
+            ? { actorEmail: cleanActorEmail }
+            : {}),
+          actorRole: 'student',
+          timestamp: serverTimestamp(),
+        });
+      }
     });
   } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('complete your student profile') ||
+        error.message.includes('session expired') ||
+        error.message.includes('verified Google account'))
+    ) {
+      throw error;
+    }
     handleFirestoreError(error, OperationType.UPDATE, docPath);
   }
 }

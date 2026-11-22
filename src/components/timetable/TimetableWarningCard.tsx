@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AlertCircle, ArrowRight, ShieldAlert } from 'lucide-react';
+import { getFriendlyFirebaseErrorMessage } from '../../firebase/errorHandling';
 
 interface TimetableWarningCardProps {
   isSubmitting: boolean;
@@ -80,7 +81,12 @@ export const TimetableWarningCard: React.FC<TimetableWarningCardProps> = ({
           className="p-3 rounded-xl bg-[#FFF0F1] border border-[#E63946]/30 text-xs font-medium text-[#E63946] flex items-start gap-2"
         >
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{error}</span>
+          <span>
+            {getFriendlyFirebaseErrorMessage(
+              error,
+              'Unable to save confirmation right now. Please try again.'
+            )}
+          </span>
         </div>
       )}
 

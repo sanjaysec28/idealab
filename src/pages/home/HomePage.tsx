@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { getFriendlyFirebaseErrorMessage } from '../../firebase/errorHandling';
 import {
   subscribeToOptedInAvailability,
   syncAvailabilityPublicProfile,
@@ -240,9 +241,10 @@ export const HomePage: React.FC = () => {
     } catch (err) {
       setOptimisticOptIn(null);
       setOptInError(
-        err instanceof Error
-          ? err.message
-          : 'Unable to update collaboration availability right now.'
+        getFriendlyFirebaseErrorMessage(
+          err,
+          'Unable to update collaboration availability right now.'
+        )
       );
     } finally {
       setIsSavingOptIn(false);

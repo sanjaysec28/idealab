@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth, authPersistenceReady } from '../firebase/config';
+import { getFriendlyFirebaseErrorMessage } from '../firebase/errorHandling';
 import {
   checkIsAdminUser,
   reloadStudentUser,
@@ -243,7 +244,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             (err) => {
               if (!active || sessionEpochRef.current !== epoch) return;
               if (!profileReceived) {
-                setAuthError(err.message);
+                setAuthError(
+                  getFriendlyFirebaseErrorMessage(
+                    err,
+                    'Unable to load your student profile right now. Please refresh and retry.'
+                  )
+                );
                 setIsProfileLoaded(true);
               }
             }
@@ -260,7 +266,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             (err) => {
               if (!active || sessionEpochRef.current !== epoch) return;
               if (!timetableReceived) {
-                setAuthError(err.message);
+                setAuthError(
+                  getFriendlyFirebaseErrorMessage(
+                    err,
+                    'Unable to load your timetable status right now. Please refresh and retry.'
+                  )
+                );
                 setIsTimetableLoaded(true);
               }
             }
@@ -407,7 +418,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         timetable: docs.timetableDoc,
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Google sign-in failed.';
+      const msg = getFriendlyFirebaseErrorMessage(err, 'Google sign-in failed. Please try again.');
       setAuthError(msg);
       throw err;
     } finally {

@@ -182,7 +182,23 @@ export async function completeStudentProfile(
     throw new Error('Your session expired. Please sign in again with Google.');
   }
 
-  const verifiedEmail = assertValidEmailAddress(currentUser.email);
+  if (!currentUser.emailVerified) {
+    await currentUser.reload();
+  }
+  const refreshedUser = auth.currentUser || currentUser;
+  if (!refreshedUser.emailVerified) {
+    throw new Error('A verified Google account is required to save your profile.');
+  }
+  try {
+    const tokenResult = await refreshedUser.getIdTokenResult();
+    if (!tokenResult.claims.email_verified) {
+      await refreshedUser.getIdToken(true);
+    }
+  } catch {
+    // Non-fatal token check
+  }
+
+  const verifiedEmail = assertValidEmailAddress(refreshedUser.email);
   const fullName = input.fullName.trim().slice(0, 100);
   const registrationNumber = normalizeRegistrationNumber(input.registrationNumber).slice(0, 32);
   const department = input.department.trim().slice(0, 80);
