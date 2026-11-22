@@ -36,9 +36,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ visible = true }) =>
   }, []);
 
   // Exact 5-second dual-logo sequence:
-  // 0–2s: spl-sec.png fade in & hold -> smooth fade out (1.65s–2.0s)
-  // 2–4.5s: spl-ide.png fade in & hold for 2.5s
-  // 4.5–5s: spl-ide.png smooth fade out + full splash fade out
+  // 0–2s: spl-sec.webp fade in & hold -> smooth fade out (1.65s–2.0s)
+  // 2–4.5s: spl-ide.webp fade in & hold for 2.5s
+  // 4.5–5s: spl-ide.webp smooth fade out + full splash fade out
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
       setSecVisible(true);

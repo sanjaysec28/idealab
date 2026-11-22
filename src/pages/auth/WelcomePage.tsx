@@ -6,7 +6,7 @@ import { IdeaLabLogo } from '../../components/shared/IdeaLabLogo';
 export const WelcomePage: React.FC = () => {
   return (
     <main className="min-h-[100dvh] w-full bg-[#FAF8F5] text-[#202124] overflow-x-clip lg:h-[100dvh] lg:overflow-hidden">
-      {/* MOBILE / TABLET (< lg): Edge-to-edge mob-card.png -> Get Started -> Sign In */}
+      {/* MOBILE / TABLET (< lg): Edge-to-edge mob-card.webp -> Get Started -> Sign In */}
       <div className="flex flex-col w-full min-h-[100dvh] lg:hidden">
         <div className="w-full p-0 m-0 mobile-welcome-hero-mask">
           <img

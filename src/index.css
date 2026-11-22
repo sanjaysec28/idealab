@@ -67,7 +67,7 @@
   }
 }
 
-/* Seamless bottom-edge fade for Mobile WelcomePage artwork (mob-card.png) */
+/* Seamless bottom-edge fade for Mobile WelcomePage artwork (mob-card.webp) */
 .mobile-welcome-hero-mask {
   -webkit-mask-image: linear-gradient(
     to bottom,
