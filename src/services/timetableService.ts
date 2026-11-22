@@ -9,6 +9,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { assertValidEmailAddress } from '../firebase/authService';
@@ -349,61 +350,58 @@ export async function acknowledgeTimetableWarning(uid: string): Promise<void> {
   const docPath = `students/${uid}`;
 
   try {
-    await runTransaction(db, async (tx) => {
-      const [snap, auditSnap] = await Promise.all([
-        tx.get(studentRef),
-        tx.get(auditRef),
-      ]);
+    const snap = await getDoc(studentRef);
 
-      if (!snap.exists()) {
-        throw new Error('Please complete your student profile before continuing.');
-      }
+    if (!snap.exists()) {
+      throw new Error('Please complete your student profile before continuing.');
+    }
 
-      const data = snap.data() as StudentProfileDoc;
-      if (data.profileSetupCompleted !== true) {
-        throw new Error('Please complete your student profile before continuing.');
-      }
+    const data = snap.data() as StudentProfileDoc;
+    if (data.profileSetupCompleted !== true) {
+      throw new Error('Please complete your student profile before continuing.');
+    }
 
-      if (data.timetableLocked === true || data.timetableWorkflowState === 'finalized') {
-        return; // Timetable already finalized and locked
-      }
+    if (data.timetableLocked === true || data.timetableWorkflowState === 'finalized') {
+      return; // Timetable already finalized and locked
+    }
 
-      if (data.timetableWarningAcceptedAt) {
-        return; // Already acknowledged (idempotent)
-      }
+    if (data.timetableWarningAcceptedAt) {
+      return; // Already acknowledged (idempotent)
+    }
 
-      tx.update(studentRef, {
-        timetableWarningAcceptedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+    const cleanStudentEmail = data.email?.trim().slice(0, 160);
+    const cleanStudentName = data.fullName?.trim().slice(0, 100);
+    const cleanRegNo = data.registrationNumber?.trim().slice(0, 32);
+    const cleanActorEmail = refreshedUser.email?.trim().slice(0, 160);
 
-      if (!auditSnap.exists()) {
-        const cleanStudentEmail = data.email?.trim().slice(0, 160);
-        const cleanStudentName = data.fullName?.trim().slice(0, 100);
-        const cleanRegNo = data.registrationNumber?.trim().slice(0, 32);
-        const cleanActorEmail = refreshedUser.email?.trim().slice(0, 160);
+    const batch = writeBatch(db);
 
-        tx.set(auditRef, {
-          studentUid: uid,
-          ...(cleanStudentEmail && cleanStudentEmail.length >= 5
-            ? { studentEmail: cleanStudentEmail }
-            : {}),
-          ...(cleanStudentName && cleanStudentName.length >= 1
-            ? { studentName: cleanStudentName }
-            : {}),
-          ...(cleanRegNo && cleanRegNo.length >= 4
-            ? { registrationNumber: cleanRegNo }
-            : {}),
-          action: 'warning_acknowledged',
-          actorUid: uid,
-          ...(cleanActorEmail && cleanActorEmail.length >= 5
-            ? { actorEmail: cleanActorEmail }
-            : {}),
-          actorRole: 'student',
-          timestamp: serverTimestamp(),
-        });
-      }
+    batch.update(studentRef, {
+      timetableWarningAcceptedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
+
+    batch.set(auditRef, {
+      studentUid: uid,
+      ...(cleanStudentEmail && cleanStudentEmail.length >= 5
+        ? { studentEmail: cleanStudentEmail }
+        : {}),
+      ...(cleanStudentName && cleanStudentName.length >= 1
+        ? { studentName: cleanStudentName }
+        : {}),
+      ...(cleanRegNo && cleanRegNo.length >= 4
+        ? { registrationNumber: cleanRegNo }
+        : {}),
+      action: 'warning_acknowledged',
+      actorUid: uid,
+      ...(cleanActorEmail && cleanActorEmail.length >= 5
+        ? { actorEmail: cleanActorEmail }
+        : {}),
+      actorRole: 'student',
+      timestamp: serverTimestamp(),
+    });
+
+    await batch.commit();
   } catch (error) {
     if (
       error instanceof Error &&

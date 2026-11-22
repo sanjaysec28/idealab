@@ -924,7 +924,9 @@ service cloud.firestore {
     // Immutable timetable audit log records
     match /timetableAuditLogs/{logId} {
       allow get: if isValidId(logId) && isVerifiedStudent() && (
-        existing().studentUid == request.auth.uid || isAdmin()
+        (resource == null && logId == ('warn_' + request.auth.uid)) ||
+        (resource != null && existing().studentUid == request.auth.uid) ||
+        isAdmin()
       );
       allow list: if isVerifiedStudent() && (
         resource.data.studentUid == request.auth.uid || isListAdminClaim()
